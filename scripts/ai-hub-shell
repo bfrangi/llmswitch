@@ -4,12 +4,26 @@
 # Launches Tunnel + Gateway + Claude in one command.
 
 # 1. Setup environment
-# Use provided values or defaults.
-HUB_PORT=${HUB_PORT:-11436}
-LOCAL_OLLAMA_PORT=${LOCAL_OLLAMA_PORT:-11435}
-REMOTE_OLLAMA_PORT=${REMOTE_OLLAMA_PORT:-11434}
-REMOTE_HOST=${REMOTE_HOST:-workstation}
-HUB_LOG=${HUB_LOG:-"$HOME/Documents/ai-hub/hub.log"}
+# Load configuration from files.
+CONFIG_FILE="${1:-$(ls config.yaml ~/.config/ai-hub/config.yaml 2>/dev/null | head -n 1)}"
+
+if [ -z "$CONFIG_FILE" ]; then
+    echo "Error: No configuration file found. Please provide one as an argument or place it in the current directory or ~/.config/ai-hub/config.yaml"
+    exit 1
+fi
+
+echo "Using configuration: $CONFIG_FILE"
+
+# Extract values using python (to avoid heavy dependencies like yq)
+get_cfg() {
+    python3 -c "import yaml; print(yaml.safe_load(open('$CONFIG_FILE')$1)" 2>/dev/null
+}
+
+HUB_PORT=$(get_cfg "['HUB_PORT'] or 11436")
+LOCAL_OLLAMA_PORT=$(get_cfg "['LOCAL_OLLAMA_PORT'] or 11435")
+REMOTE_OLLAMA_PORT=$(get_cfg "['REMOTE_OLLAMA_PORT'] or 11434")
+REMOTE_HOST=$(get_cfg "['REMOTE_HOST'] or 'workstation'")
+HUB_LOG=$(get_cfg "['HUB_LOG'] or '$HOME/Documents/ai-hub/hub.log'")
 
 # Detect Claude path
 CLAUDE_CMD=$(which claude 2>/dev/null || echo "$HOME/.local/bin/claude")
@@ -81,7 +95,7 @@ TUNNEL_PID=$!
 # 4. Launch the AI Hub Gateway in the background
 echo "Starting AI Hub Gateway on port $HUB_PORT..."
 export HUB_PORT=$HUB_PORT
-nohup python3 -m hub.proxy > "$HUB_LOG" 2>&1 &
+nohup uv run python -m hub.proxy > "$HUB_LOG" 2>&1 &
 HUB_PID=$!
 
 # Wait for the gateway to be ready
