@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# AI Hub Orchestrator
+# Launches Tunnel + Gateway + Claude in one command.
+
+# 1. Setup environment
+# We use a default port if not provided, but allow overrides.
+HUB_PORT=${HUB_PORT:-11436}
+LOCAL_OLLAMA_PORT=${LOCAL_OLLAMA_PORT:-11435}
+REMOTE_OLLAMA_PORT=${REMOTE_OLLAMA_PORT:-11434}
+REMOTE_HOST=${REMOTE_HOST:-workstation}
+HUB_LOG="$HOME/Documents/ai-hub/hub.log"
+
+# Detect Claude path
+CLAUDE_CMD=$(which claude 2>/dev/null || echo "$HOME/.local/bin/claude")
+
+# Parse flags manually to support --force and pass others to Claude
+FORCE=false
+ARGS=()
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -f|--force) FORCE=true; shift ;;
+        *) ARGS+=("$1"); shift ;;
+    esac
+done
+
+# Cleanup function to kill background processes on exit
+cleanup() {
+    echo ""
+    echo "Shutting down AI Hub ecosystem..."
+    # Kill the tunnel (searching by the specific port we used)
+    pkill -f "ssh -L $LOCAL_OLLAMA_PORT:localhost:$REMOTE_OLLAMA_PORT"
+    # Kill the gateway
+    pkill -f "python3 -m hub.proxy"
+    echo "Done."
+}
+
+# Trap exit signals (Ctrl+C, exit, etc)
+trap cleanup EXIT
+
+# 2. Safe Cleanup of stale tunnels
+echo "Checking for stale processes on port $LOCAL_OLLAMA_PORT..."
+STALE_PID=$(lsof -ti :$LOCAL_OLLAMA_PORT)
+
+if [ -n "$STALE_PID" ]; then
+    PROCESS_NAME=$(ps -p "$STALE_PID" -o comm= | tr -d ' ')
+    echo "⚠️  Found process '$PROCESS_NAME' (PID $STALE_PID) listening on port $LOCAL_OLLAMA_PORT."
+
+    if [[ "$PROCESS_NAME" == "ssh" ]]; then
+        if [ "$FORCE" = true ]; then
+            echo "Force flag detected. Killing stale process..."
+            kill -9 "$STALE_PID"
+            sleep 1
+        else
+            read -p "This looks like a stale tunnel. Kill it? [y/N] " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                kill -9 "$STALE_PID"
+                sleep 1
+            else
+                echo "Aborting startup to protect existing process."
+                exit 1
+            fi
+        fi
+    else
+        echo "Process '$PROCESS_NAME' is not a known SSH tunnel. Aborting to be safe."
+        exit 1
+    fi
+fi
+
+# 3. Launch the SSH Tunnel in the background
+echo "Establishing secure tunnel to $REMOTE_HOST..."
+# We assume the host is configured in ~/.ssh/config
+ssh -f -N -L "$LOCAL_OLLAMA_PORT:localhost:$REMOTE_OLLAMA_PORT" "$REMOTE_HOST"
+
+# 4. Launch the AI Hub Gateway in the background
+echo "Starting AI Hub Gateway on port $HUB_PORT..."
+export HUB_PORT=$HUB_PORT
+nohup python3 -m hub.proxy > "$HUB_LOG" 2>&1 &
+HUB_PID=$!
+
+# Wait for the gateway to be ready
+echo "Waiting for gateway to initialize..."
+while ! curl -s http://localhost:$HUB_PORT/api/tags > /dev/null; do
+    sleep 1
+done
+echo "Gateway is online."
+
+# 5. Launch Claude Code with all passed arguments
+echo "Launching Claude Code..."
+export OLLAMA_HOST=http://localhost:$HUB_PORT
+exec "$CLAUDE_CMD" "${ARGS[@]}"
