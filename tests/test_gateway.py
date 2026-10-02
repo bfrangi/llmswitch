@@ -18,14 +18,14 @@ CLIENT_HEADERS = {
 }
 
 
-async def test_prefixed_model_is_rewritten_and_streamed_verbatim(hub, recorder) -> None:
+async def test_prefixed_model_is_rewritten_and_streamed_verbatim(client, recorder) -> None:
     body = {
         "model": "ollama/qwen3:14b",
         "max_tokens": 5,
         "stream": True,
         "messages": [{"role": "user", "content": "hi"}],
     }
-    r = await hub.post("/v1/messages?beta=true", json=body, headers=CLIENT_HEADERS)
+    r = await client.post("/v1/messages?beta=true", json=body, headers=CLIENT_HEADERS)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")
     assert r.headers["request-id"] == "req_x"
@@ -40,9 +40,9 @@ async def test_prefixed_model_is_rewritten_and_streamed_verbatim(hub, recorder) 
     assert up["headers"]["x-claude-code-session-id"] == "s1"
 
 
-async def test_passthrough_keeps_bytes_and_credentials(hub, recorder) -> None:
+async def test_passthrough_keeps_bytes_and_credentials(client, recorder) -> None:
     raw = b'{"model": "claude-opus-5-5",  "max_tokens": 5, "messages": [{"role": "user", "content": "hi"}]}'
-    r = await hub.post("/v1/messages", content=raw, headers=CLIENT_HEADERS)
+    r = await client.post("/v1/messages", content=raw, headers=CLIENT_HEADERS)
     assert r.status_code == 200
     assert r.json()["content"][0]["text"] == "hello"
     up = recorder.last
@@ -53,13 +53,13 @@ async def test_passthrough_keeps_bytes_and_credentials(hub, recorder) -> None:
     assert "host" in up["headers"] and up["headers"]["host"] == "anthropic.test"
 
 
-async def test_upstream_error_body_is_forwarded_unmodified(hub) -> None:
-    r = await hub.post("/v1/messages", json={"model": "anthropic/bad", "messages": []}, headers=CLIENT_HEADERS)
+async def test_upstream_error_body_is_forwarded_unmodified(client) -> None:
+    r = await client.post("/v1/messages", json={"model": "anthropic/bad", "messages": []}, headers=CLIENT_HEADERS)
     assert r.status_code == 400
     assert r.json() == {"type": "error", "error": {"type": "invalid_request_error", "message": "upstream says no"}}
 
 
-async def test_compat_surgery_and_configured_headers(hub, recorder) -> None:
+async def test_compat_surgery_and_configured_headers(client, recorder) -> None:
     body = {
         "model": "strict/m",
         "max_tokens": 1,
@@ -67,7 +67,7 @@ async def test_compat_surgery_and_configured_headers(hub, recorder) -> None:
         "context_management": {"edits": []},
         "tools": [{"name": "t", "input_schema": {}, "strict": True}],
     }
-    r = await hub.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
+    r = await client.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
     assert r.status_code == 200
     up = recorder.last
     assert "context_management" not in up["json"]
@@ -76,14 +76,14 @@ async def test_compat_surgery_and_configured_headers(hub, recorder) -> None:
     assert up["headers"]["x-extra"] == "1"
 
 
-async def test_openai_key_is_injected_and_translated(hub, recorder) -> None:
+async def test_openai_key_is_injected_and_translated(client, recorder) -> None:
     body = {
         "model": "openai/gpt-x",
         "max_tokens": 9,
         "system": "be brief",
         "messages": [{"role": "user", "content": "hi"}],
     }
-    r = await hub.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
+    r = await client.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
     assert r.status_code == 200
     msg = r.json()
     assert msg["type"] == "message" and msg["model"] == "openai/gpt-x"
@@ -96,9 +96,9 @@ async def test_openai_key_is_injected_and_translated(hub, recorder) -> None:
     assert up["json"]["model"] == "gpt-x" and up["json"]["max_tokens"] == 9
 
 
-async def test_openai_stream_becomes_anthropic_events(hub) -> None:
+async def test_openai_stream_becomes_anthropic_events(client) -> None:
     body = {"model": "openai/gpt-x", "max_tokens": 9, "stream": True, "messages": [{"role": "user", "content": "hi"}]}
-    r = await hub.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
+    r = await client.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
     events = [json.loads(line[5:]) for line in r.text.splitlines() if line.startswith("data:")]
     types = [e["type"] for e in events]
@@ -128,48 +128,50 @@ async def test_openai_stream_becomes_anthropic_events(hub) -> None:
     }
 
 
-async def test_count_tokens(hub) -> None:
-    r = await hub.post("/v1/messages/count_tokens", json={"model": "claude-x", "messages": []}, headers=CLIENT_HEADERS)
+async def test_count_tokens(client) -> None:
+    r = await client.post(
+        "/v1/messages/count_tokens", json={"model": "claude-x", "messages": []}, headers=CLIENT_HEADERS
+    )
     assert r.status_code == 200 and r.json() == {"input_tokens": 42}
-    r = await hub.post(
+    r = await client.post(
         "/v1/messages/count_tokens", json={"model": "ollama/qwen3:14b", "messages": []}, headers=CLIENT_HEADERS
     )
     assert r.status_code == 404 and r.json()["error"]["type"] == "not_found_error"
-    r = await hub.post(
+    r = await client.post(
         "/v1/messages/count_tokens", json={"model": "openai/gpt-x", "messages": []}, headers=CLIENT_HEADERS
     )
     assert r.status_code == 404 and "OpenAI" in r.json()["error"]["message"]
 
 
-async def test_model_listing(hub) -> None:
-    r = await hub.get("/v1/models")
+async def test_model_listing(client) -> None:
+    r = await client.get("/v1/models")
     data = r.json()["data"]
     ids = [m["id"] for m in data]
     assert "opus" in ids  # bare alias launches as-is
     assert "ollama/qwen3:14b" in ids and "openai/gpt-x" in ids
     qwen = next(m for m in data if m["id"] == "ollama/qwen3:14b")
     assert "14.8B" in qwen["description"] and "ctx 40k" in qwen["description"] and "tools" in qwen["description"]
-    rich = (await hub.get("/hub/models")).json()
+    rich = (await client.get("/llmswitch/models")).json()
     assert rich["providers"]["ollama"]["ok"] is True and rich["providers"]["strict"]["ok"] is True
     entry = next(m for m in rich["models"] if m["id"] == "ollama/qwen3:14b")
     assert entry["launch_id"] == "ollama/qwen3:14b" and entry["details"]["context_length"] == 40960
 
 
-async def test_bare_name_on_two_providers_is_ambiguous(hub) -> None:
-    r = await hub.post("/v1/messages", json={"model": "shared-model", "messages": []}, headers=CLIENT_HEADERS)
+async def test_bare_name_on_two_providers_is_ambiguous(client) -> None:
+    r = await client.post("/v1/messages", json={"model": "shared-model", "messages": []}, headers=CLIENT_HEADERS)
     assert r.status_code == 404
     msg = r.json()["error"]["message"]
     assert "ollama/shared-model" in msg and "openai/shared-model" in msg
 
 
-async def test_errors_and_probes(hub) -> None:
-    assert (await hub.head("/api/hello")).status_code == 200
-    assert (await hub.get("/healthz")).json()["service"] == "ai-hub"
-    r = await hub.post("/v1/messages", json={"messages": []})
+async def test_errors_and_probes(client) -> None:
+    assert (await client.head("/api/hello")).status_code == 200
+    assert (await client.get("/healthz")).json()["service"] == "llmswitch"
+    r = await client.post("/v1/messages", json={"messages": []})
     assert r.status_code == 400 and "'model' is required" in r.json()["error"]["message"]
-    r = await hub.post("/v1/messages", content=b"not json", headers={"content-type": "application/json"})
+    r = await client.post("/v1/messages", content=b"not json", headers={"content-type": "application/json"})
     assert r.status_code == 400
-    r = await hub.post("/v1/messages", json={"model": "nowhere/x", "messages": []})
+    r = await client.post("/v1/messages", json={"model": "nowhere/x", "messages": []})
     assert r.status_code == 404 and "nowhere/x" in r.json()["error"]["message"]
-    r = await hub.get("/v1/complete")
+    r = await client.get("/v1/complete")
     assert r.status_code == 404 and r.json()["type"] == "error"

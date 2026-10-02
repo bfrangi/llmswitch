@@ -1,4 +1,4 @@
-"""ai-hub: one local endpoint in front of every LLM server you use.
+"""llmswitch: one local endpoint in front of every LLM server you use.
 
 The gateway speaks the Anthropic Messages API to clients such as Claude Code and
 routes each request, by model name, to the upstream that serves that model:

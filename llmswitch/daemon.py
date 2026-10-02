@@ -35,8 +35,11 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def _looks_like_hub(cmdline: str) -> bool:
-    return "hub.gateway" in cmdline or "hub.proxy" in cmdline or "ai-hub" in cmdline
+LEGACY_NAMES = ("hub.gateway", "hub.proxy", "ai-hub")  # what earlier versions of this tool were called
+
+
+def _looks_like_gateway(cmdline: str) -> bool:
+    return APP_NAME in cmdline or any(name in cmdline for name in LEGACY_NAMES)
 
 
 class GatewayManager:
@@ -44,13 +47,13 @@ class GatewayManager:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.state_dir = config.hub.state_dir
+        self.state_dir = config.gateway.state_dir
         self.pidfile = self.state_dir / "gateway.pid"
         self.logfile = self.state_dir / "gateway.log"
 
     @property
     def base_url(self) -> str:
-        return self.config.hub.base_url
+        return self.config.gateway.base_url
 
     # ------------------------------------------------------------------- probes
     def get_json(self, path: str, timeout: float = 15.0) -> Any:
@@ -94,14 +97,14 @@ class GatewayManager:
             if running and Path(running).expanduser().resolve() != self.config.path.resolve():
                 raise GatewayError(
                     f"a gateway is already running on {self.base_url} with another config ({running}); "
-                    "run `ai-hub down` first or point --config at that file"
+                    "run `llmswitch down` first or point --config at that file"
                 )
             return "already running"
-        port, host = self.config.hub.port, "127.0.0.1"
+        port, host = self.config.gateway.port, "127.0.0.1"
         if port_open(host, port):
             who = listeners(port)
             desc = ", ".join(str(w) for w in who) or "an unknown process"
-            if force and who and all(_looks_like_hub(w.cmdline) for w in who):
+            if force and who and all(_looks_like_gateway(w.cmdline) for w in who):
                 for w in who:
                     with contextlib.suppress(ProcessLookupError):
                         os.kill(w.pid, signal.SIGTERM)
@@ -110,12 +113,12 @@ class GatewayManager:
                     time.sleep(0.1)
             if port_open(host, port):
                 raise GatewayError(
-                    f"port {port} is in use by {desc}; stop it, change hub.port, or add --force if it is an old ai-hub"
+                    f"port {port} is in use by {desc}; stop it, change gateway.port, or add --force if it is an old llmswitch"
                 )
         self.state_dir.mkdir(parents=True, exist_ok=True)
         with self.logfile.open("ab") as logf:
             proc = subprocess.Popen(
-                [sys.executable, "-m", "hub.gateway", "--config", str(self.config.path)],
+                [sys.executable, "-m", "llmswitch.gateway", "--config", str(self.config.path)],
                 stdin=subprocess.DEVNULL,
                 stdout=logf,
                 stderr=subprocess.STDOUT,

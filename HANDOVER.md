@@ -7,7 +7,7 @@ reference; this file records why things are the way they are.
 
 A local gateway that speaks the Anthropic Messages API to Claude Code and routes each
 request to an upstream by model name. Routing, hosts, ports, credentials, and model
-lists all live in `~/.config/ai-hub/config.yaml`; the code names none of them.
+lists all live in `~/.config/llmswitch/config.yaml`; the code names none of them.
 
 ## Decisions
 
@@ -20,7 +20,7 @@ lists all live in `~/.config/ai-hub/config.yaml`; the code names none of them.
 - **Credentials are per provider.** `passthrough` forwards the client's auth headers,
   which is what makes a Claude subscription login work; everything else strips them.
 - **Shared lifecycle.** The gateway is a detached daemon and each tunnel an SSH
-  control-master session, both reused across launches and closed by `ai-hub down`.
+  control-master session, both reused across launches and closed by `llmswitch down`.
   The previous script's `exec claude` skipped its own cleanup trap and leaked a gateway
   and eight tunnels; nothing here depends on an EXIT trap.
 - **The picker lives in the launcher.** Claude Code's own gateway discovery filters
@@ -35,12 +35,12 @@ lists all live in `~/.config/ai-hub/config.yaml`; the code names none of them.
 
 Ollama 0.32.1 (local) and 0.34.4 (remote): `/v1/messages` ignores unknown fields and
 headers, relaxes unsupported thinking instead of erroring, has no `count_tokens`
-(plain-text 404, which the hub turns into an API-shaped 404), and takes its context
+(plain-text 404, which the gateway turns into an API-shaped 404), and takes its context
 window from `OLLAMA_CONTEXT_LENGTH` on the server, not from the request.
 
 ## Open ideas
 
-- `ai-hub status` could read Ollama's `/api/ps` to show each loaded model's actual
+- `llmswitch status` could read Ollama's `/api/ps` to show each loaded model's actual
   context window.
 - An `ollama` protocol provider could expose `/api/chat` for non-Claude clients if
-  the hub is ever meant to front tools other than Claude Code.
+  the gateway is ever meant to front tools other than Claude Code.

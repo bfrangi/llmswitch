@@ -467,16 +467,16 @@ class OpenAIProvider(Provider):
 
     async def count_tokens(self, inc: Incoming, upstream_model: str) -> Response:
         return anthropic_error(
-            404, f"ai-hub: provider '{self.name}' speaks the OpenAI protocol, which has no token counting endpoint"
+            404, f"llmswitch: provider '{self.name}' speaks the OpenAI protocol, which has no token counting endpoint"
         )
 
     async def messages(self, inc: Incoming, upstream_model: str) -> Response:
         if inc.json is None:
-            return anthropic_error(400, "ai-hub: request body must be a JSON object")
+            return anthropic_error(400, "llmswitch: request body must be a JSON object")
         try:
             payload = anthropic_to_openai(inc.json, upstream_model)
         except TranslationError as e:
-            return anthropic_error(400, f"ai-hub: {e}")
+            return anthropic_error(400, f"llmswitch: {e}")
         payload = self.apply_compat(payload)
         headers = [
             (k, v) for k, v in self.upstream_headers(inc, default_auth_header="authorization") if k != "content-type"
@@ -501,5 +501,5 @@ class OpenAIProvider(Provider):
         try:
             data = json.loads(body)
         except ValueError:
-            return anthropic_error(502, f"ai-hub: provider '{self.name}' returned a non-JSON response")
+            return anthropic_error(502, f"llmswitch: provider '{self.name}' returned a non-JSON response")
         return JSONResponse(openai_to_anthropic(data, requested))

@@ -1,11 +1,11 @@
-# ai-hub
+# llmswitch
 
 One local endpoint in front of every LLM server you use, so Claude Code can run on
 Anthropic's models, on an Ollama on this machine, on an Ollama on another machine,
 or on any OpenAI-compatible server, and switch between them by model name.
 
 ```
-                          ┌──────────────────────────── ai-hub gateway (127.0.0.1:11436) ───┐
+                          ┌───────────────────────── llmswitch gateway (127.0.0.1:11436) ───┐
  Claude Code ──────────►  │  POST /v1/messages   model: "workstation/qwen3-coder:30b"           │
  ANTHROPIC_BASE_URL       │        │                                                        │
                           │        ▼  route by model name                                   │
@@ -28,33 +28,33 @@ Nothing in the code names a host, a port, or a model. The configuration file doe
 Requires Python 3.10+ and [`uv`](https://github.com/astral-sh/uv); `ssh` for tunnels.
 
 ```bash
-uv tool install .            # from this directory; rerun with --reinstall to upgrade
-ai-hub init                  # writes ~/.config/ai-hub/config.yaml
-$EDITOR ~/.config/ai-hub/config.yaml
-ai-hub-shell                 # starts what is needed, shows the model picker, launches Claude Code
+uv tool install .                 # from this directory; rerun with --reinstall to upgrade
+llmswitch init                    # writes ~/.config/llmswitch/config.yaml
+$EDITOR ~/.config/llmswitch/config.yaml
+llmswitch                         # starts what is needed, shows the model picker, launches Claude Code
 ```
 
-`ai-hub init` pre-fills a `local` provider if an Ollama answers on this machine, and
+`llmswitch init` pre-fills a `local` provider if an Ollama answers on this machine, and
 leaves commented examples for a tunnelled remote machine and an OpenAI-style server.
 
 ## Daily use
 
 ```bash
-ai-hub-shell                                  # picker, then Claude Code
-ai-hub-shell --model workstation/qwen3-coder:30b   # skip the picker
-ai-hub-shell --model local/qwen3:14b -p "summarise this repo"   # anything else goes to Claude Code
-ai-hub-shell --resume                         # same
-ai-hub models                                 # everything the hub can route, grouped by provider
-ai-hub status                                 # gateway, tunnels, providers
-ai-hub down                                   # stop the gateway and the tunnels
+llmswitch                                    # picker, then Claude Code
+llmswitch --model workstation/qwen3-coder:30b     # skip the picker
+llmswitch --resume                           # anything it does not know is passed to Claude Code
+llmswitch --model local/qwen3:14b -p "summarise this repo"
+llmswitch models                             # everything the gateway can route, grouped by provider
+llmswitch status                             # gateway, tunnels, providers
+llmswitch down                               # stop the gateway and the tunnels
 ```
 
 Inside Claude Code, `/model workstation/qwen3-coder:30b` switches models at any time; the
-name just has to be one the hub routes. Pressing Enter in the picker launches Claude
-Code with its own default model, which goes to Anthropic through the hub.
+name just has to be one the gateway routes. Pressing Enter in the picker launches Claude
+Code with its own default model, which goes to Anthropic through the gateway.
 
 The gateway and the tunnels stay up after Claude Code exits and are reused by the
-next launch, so several sessions can share them. `ai-hub restart` reloads the config.
+next launch, so several sessions can share them. `llmswitch restart` reloads the config.
 
 ### Model names
 
@@ -66,18 +66,18 @@ next launch, so several sessions can share them. `ai-hub restart` reloads the co
 | anything else                 | the provider with `default: true`, if any   | default       |
 
 A bare name present on two providers is an error that names both candidates.
-Aliases such as `opus` are expanded by Claude Code itself before they reach the hub.
+Aliases such as `opus` are expanded by Claude Code itself before they reach the gateway.
 
 ## Configuration
 
-`~/.config/ai-hub/config.yaml`, or `$AI_HUB_CONFIG`, or `--config PATH`. Strings may use
+`~/.config/llmswitch/config.yaml`, or `$LLMSWITCH_CONFIG`, or `--config PATH`. Strings may use
 `${VAR}` and `${VAR:-default}`. Unknown keys are rejected, so typos surface at once.
 
 ```yaml
-hub:
+gateway:
   host: 127.0.0.1            # bind address (default). Keep loopback: your Anthropic login passes through here.
   port: 11436
-  # state_dir: ~/.local/state/ai-hub     # logs, pidfile, tunnel sockets
+  # state_dir: ~/.local/state/llmswitch     # logs, pidfile, tunnel sockets
   # discovery_ttl: 30                    # seconds a provider's model list is cached
   # discovery_timeout: 5                 # per-provider listing timeout
   # connect_timeout: 10                  # upstream TCP connect timeout
@@ -138,8 +138,8 @@ claude:
 
 ### Remote machines
 
-A tunnel is the zero-setup option: it needs only `ssh` access, and the hub manages it
-as an SSH control-master session (`ai-hub status` sees it, `ai-hub down` closes it,
+A tunnel is the zero-setup option: it needs only `ssh` access, and the gateway manages it
+as an SSH control-master session (`llmswitch status` sees it, `llmswitch down` closes it,
 `--force` replaces a stale one). If both machines are already on a private network such
 as Tailscale, you can skip the tunnel: make the remote server listen on that network
 (`OLLAMA_HOST=<tailnet-ip>` for Ollama) and point `base_url` at it directly.
@@ -153,7 +153,7 @@ Token counting is not available, so Claude Code estimates context usage itself.
 
 ## What Claude Code sees
 
-- `ai-hub-shell` sets `ANTHROPIC_BASE_URL` to the hub and passes `--model` when you
+- `llmswitch` sets `ANTHROPIC_BASE_URL` to the gateway and passes `--model` when you
   chose one. A value in your `~/.claude/settings.json` `env` block would override it.
 - Requests to Anthropic go through with headers, body, and query string unchanged, so
   prompt caching, betas, usage headers, and error wording all behave as without a proxy.
@@ -163,7 +163,7 @@ Token counting is not available, so Claude Code estimates context usage itself.
   `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` in that provider's `launch.env`.
 - Claude Code's own gateway model discovery (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`)
   works against `/v1/models` but only lists ids containing `claude` or `anthropic`, and
-  only when a credential variable is set. The `ai-hub-shell` picker has no such limits.
+  only when a credential variable is set. The `llmswitch` picker has no such limits.
 - Claude Code does not know names like `workstation/qwen3-coder:30b`, so it assumes a 200k
   context window and says so once at startup. The template's `launch.env` sets
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from the model's reported window, and pins the
@@ -179,36 +179,36 @@ Token counting is not available, so Claude Code estimates context usage itself.
 
 | Command | What it does |
 | --- | --- |
-| `ai-hub-shell [--model M] [--force] [--no-picker] [--config P] [claude args]` | ensure tunnels and gateway, pick a model, `exec` Claude Code |
-| `ai-hub-shell --list` / `--init` | list routable models / write a starter config |
-| `ai-hub init [--force]` | write the starter config |
-| `ai-hub up [--force]` / `down` / `restart` | manage tunnels and the gateway |
-| `ai-hub status [--json]` | gateway, tunnels, providers (probes directly when the gateway is down) |
-| `ai-hub models [--json] [--offline]` | every routable model |
-| `ai-hub logs [-n N] [-f]` | gateway log (`~/.local/state/ai-hub/gateway.log`) |
-| `ai-hub gateway [--host H] [--port P]` | run the gateway in the foreground |
-| `ai-hub config [--edit]` | config path and validity |
+| `llmswitch [--model M] [--force] [--no-picker] [--config P] [claude args]` | ensure tunnels and gateway, pick a model, `exec` Claude Code (the default command) |
+| `llmswitch claude [...]` | the same, spelled out |
+| `llmswitch init [--force]` | write the starter config |
+| `llmswitch up [--force]` / `down` / `restart` | manage tunnels and the gateway |
+| `llmswitch status [--json]` | gateway, tunnels, providers (probes directly when the gateway is down) |
+| `llmswitch models [--json] [--offline]` | every routable model |
+| `llmswitch logs [-n N] [-f]` | gateway log (`~/.local/state/llmswitch/gateway.log`) |
+| `llmswitch gateway [--host H] [--port P]` | run the gateway in the foreground |
+| `llmswitch config [--edit]` | config path and validity |
 
 Gateway endpoints: `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models`,
-`HEAD /api/hello`, `GET /healthz`, `GET /hub/models?refresh=1`, `POST /hub/refresh`.
+`HEAD /api/hello`, `GET /healthz`, `GET /llmswitch/models?refresh=1`, `POST /llmswitch/refresh`.
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `port 11436 is in use by ...` | something else owns the hub port; `ai-hub up --force` replaces an old ai-hub, otherwise change `hub.port` |
-| `tunnel 'x': local port ... in use by ssh` | a tunnel from before; `ai-hub up --force` |
-| `model 'foo' is not served by any provider` | `ai-hub models` shows the names; use `<provider>/<model>` |
-| Claude Code shows a 401 on Claude models | the Anthropic provider must have `auth: passthrough`; check `/status` inside Claude Code shows the hub URL and your login |
+| `port 11436 is in use by ...` | something else owns the gateway port; `llmswitch up --force` replaces an old llmswitch, otherwise change `gateway.port` |
+| `tunnel 'x': local port ... in use by ssh` | a tunnel from before; `llmswitch up --force` |
+| `model 'foo' is not served by any provider` | `llmswitch models` shows the names; use `<provider>/<model>` |
+| Claude Code shows a 401 on Claude models | the Anthropic provider must have `auth: passthrough`; check `/status` inside Claude Code shows the gateway URL and your login |
 | Local model answers are cut short or forgetful | raise the server's context length (see above) |
 | `400 ... Extra inputs are not permitted` from a non-Anthropic upstream | add a `compat.drop_fields` entry naming the field |
-| Nothing happens, then a timeout | `ai-hub logs -n 50` shows the upstream the request went to |
+| Nothing happens, then a timeout | `llmswitch logs -n 50` shows the upstream the request went to |
 
 ## Extending
 
 A provider class implements a wire protocol, not a vendor: subclass
-`hub.providers.base.Provider`, set `protocol = "myproto"`, implement `discover`,
-`messages`, and `count_tokens`, and register it under the `ai_hub.providers`
+`llmswitch.providers.base.Provider`, set `protocol = "myproto"`, implement `discover`,
+`messages`, and `count_tokens`, and register it under the `llmswitch.providers`
 entry-point group in your own package. `protocol: myproto` then works in the config.
 
 ## Development
@@ -216,11 +216,11 @@ entry-point group in your own package. `protocol: myproto` then works in the con
 ```bash
 uv sync --group dev
 uv run pytest
-uv run ruff check hub tests && uv run ruff format hub tests
-uv run ai-hub gateway --config config.example.yaml --port 11499   # foreground, verbose
+uv run ruff check llmswitch tests && uv run ruff format llmswitch tests
+uv run llmswitch gateway --config config.example.yaml --port 11499   # foreground, verbose
 ```
 
-Layout: `hub/config.py` (schema and loader), `hub/catalog.py` (discovery and routing),
-`hub/providers/` (`anthropic` pass-through, `openai` translation, discovery sources),
-`hub/gateway.py` (FastAPI app), `hub/tunnels.py` and `hub/daemon.py` (process
-management), `hub/picker.py`, `hub/cli.py` (both entry points).
+Layout: `llmswitch/config.py` (schema and loader), `llmswitch/catalog.py` (discovery and routing),
+`llmswitch/providers/` (`anthropic` pass-through, `openai` translation, discovery sources),
+`llmswitch/gateway.py` (FastAPI app), `llmswitch/tunnels.py` and `llmswitch/daemon.py` (process
+management), `llmswitch/picker.py`, `llmswitch/cli.py` (both entry points).

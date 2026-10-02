@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from .config import ProviderSpec
 
-log = logging.getLogger("ai-hub.catalog")
+log = logging.getLogger("llmswitch.catalog")
 
 
 def matches_any(name: str, patterns: list[str]) -> bool:
@@ -157,7 +157,7 @@ class Catalog:
         return None, (
             f"model '{requested}' is not served by any provider; use <provider>/<model> with one of "
             + ", ".join(self._specs)
-            + " (list them with `ai-hub models`)"
+            + " (list them with `llmswitch models`)"
         )
 
     async def route(self, requested: str) -> tuple[Route | None, str]:

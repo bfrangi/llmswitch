@@ -37,7 +37,7 @@ class AnthropicProvider(Provider):
         # proper API error so the client falls back to its own estimate.
         if resp.status_code in (404, 405) and "json" not in resp.headers.get("content-type", ""):
             await resp.aclose()
-            return anthropic_error(404, f"ai-hub: provider '{self.name}' has no token counting endpoint")
+            return anthropic_error(404, f"llmswitch: provider '{self.name}' has no token counting endpoint")
         return passthrough_response(resp)
 
     def _prepare_body(self, inc: Incoming, upstream_model: str) -> bytes:

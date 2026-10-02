@@ -27,13 +27,13 @@ if TYPE_CHECKING:
     from .config import Config
     from .providers import Provider
 
-log = logging.getLogger("ai-hub.gateway")
+log = logging.getLogger("llmswitch.gateway")
 
 
 def make_http_client(config: Config) -> httpx.AsyncClient:
     """One shared upstream client: no read timeout (streams can idle), no redirects."""
     return httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=config.hub.connect_timeout, read=None, write=None, pool=None),
+        timeout=httpx.Timeout(connect=config.gateway.connect_timeout, read=None, write=None, pool=None),
         limits=httpx.Limits(max_connections=64, max_keepalive_connections=16),
         follow_redirects=False,
     )
@@ -85,7 +85,7 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         client = http or make_http_client(config)
         providers = {spec.name: build_provider(spec, client) for spec in config.providers}
-        catalog = Catalog(providers, ttl=config.hub.discovery_ttl, timeout=config.hub.discovery_timeout)
+        catalog = Catalog(providers, ttl=config.gateway.discovery_ttl, timeout=config.gateway.discovery_timeout)
         await catalog.refresh()
         app.state.providers = providers
         app.state.catalog = catalog
@@ -105,14 +105,14 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
     async def dispatch(request: Request, call: str) -> Response:
         inc = await read_incoming(request)
         if inc.json is None:
-            return anthropic_error(400, "ai-hub: request body must be a JSON object")
+            return anthropic_error(400, "llmswitch: request body must be a JSON object")
         model = inc.json.get("model")
         if not isinstance(model, str) or not model:
-            return anthropic_error(400, "ai-hub: 'model' is required")
+            return anthropic_error(400, "llmswitch: 'model' is required")
         catalog: Catalog = request.app.state.catalog
         route, reason = await catalog.route(model)
         if route is None:
-            return anthropic_error(404, f"ai-hub: {reason}")
+            return anthropic_error(404, f"llmswitch: {reason}")
         provider: Provider = request.app.state.providers[route.provider]
         log.info("%s %s -> %s/%s [%s]", call, model, route.provider, route.upstream_model, route.how)
         handler = provider.messages if call == "messages" else provider.count_tokens
@@ -120,7 +120,7 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
             return await handler(inc, route.upstream_model)
         except Exception as e:
             log.exception("provider %s failed", route.provider)
-            return anthropic_error(502, f"ai-hub: provider '{route.provider}' failed: {type(e).__name__}: {e}")
+            return anthropic_error(502, f"llmswitch: provider '{route.provider}' failed: {type(e).__name__}: {e}")
 
     @app.api_route("/api/hello", methods=["GET", "HEAD"])
     async def hello() -> Response:
@@ -134,13 +134,13 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
                 "version": __version__,
                 "pid": os.getpid(),
                 "config": str(config.path),
-                "listen": config.hub.base_url,
+                "listen": config.gateway.base_url,
                 "started_at": request.app.state.started_at,
                 "providers": provider_report(config, request.app.state.catalog),
             }
         )
 
-    @app.get("/hub/models")
+    @app.get("/llmswitch/models")
     async def hub_models(request: Request, refresh: int = 0) -> JSONResponse:
         catalog: Catalog = request.app.state.catalog
         await catalog.refresh(force=bool(refresh))
@@ -151,7 +151,7 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
             }
         )
 
-    @app.post("/hub/refresh")
+    @app.post("/llmswitch/refresh")
     async def hub_refresh(request: Request) -> JSONResponse:
         catalog: Catalog = request.app.state.catalog
         await catalog.refresh()
@@ -194,29 +194,31 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
     async def fallback(path: str, request: Request) -> Response:
-        return anthropic_error(404, f"ai-hub: no route for {request.method} /{path}")
+        return anthropic_error(404, f"llmswitch: no route for {request.method} /{path}")
 
     return app
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="ai-hub gateway", description="Run the ai-hub gateway in the foreground.")
-    ap.add_argument("--config", "-c", help="config file (default: $AI_HUB_CONFIG or ~/.config/ai-hub/config.yaml)")
-    ap.add_argument("--host", help="override hub.host")
-    ap.add_argument("--port", type=int, help="override hub.port")
-    ap.add_argument("--log-level", help="override hub.log_level")
+    ap = argparse.ArgumentParser(prog="llmswitch gateway", description="Run the llmswitch gateway in the foreground.")
+    ap.add_argument(
+        "--config", "-c", help="config file (default: $LLMSWITCH_CONFIG or ~/.config/llmswitch/config.yaml)"
+    )
+    ap.add_argument("--host", help="override gateway.host")
+    ap.add_argument("--port", type=int, help="override gateway.port")
+    ap.add_argument("--log-level", help="override gateway.log_level")
     args = ap.parse_args(argv)
     try:
         config = load_config(args.config)
     except ConfigError as e:
-        print(f"ai-hub: {e}", file=sys.stderr)
+        print(f"llmswitch: {e}", file=sys.stderr)
         return 2
-    level = (args.log_level or config.hub.log_level).lower()
+    level = (args.log_level or config.gateway.log_level).lower()
     logging.basicConfig(level=level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     uvicorn.run(
         create_app(config),
-        host=args.host or config.hub.host,
-        port=args.port or config.hub.port,
+        host=args.host or config.gateway.host,
+        port=args.port or config.gateway.port,
         log_level=level,
         access_log=True,
     )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from hub.providers.openai import StreamTranslator, anthropic_to_openai, openai_to_anthropic
+from llmswitch.providers.openai import StreamTranslator, anthropic_to_openai, openai_to_anthropic
 
 REQUEST = {
     "model": "x",
@@ -116,8 +116,8 @@ def test_response_translation() -> None:
         ],
         "usage": {"prompt_tokens": 3, "completion_tokens": 4},
     }
-    msg = openai_to_anthropic(data, "hub/model")
-    assert msg["id"] == "chatcmpl-9" and msg["model"] == "hub/model" and msg["stop_reason"] == "tool_use"
+    msg = openai_to_anthropic(data, "client/model")
+    assert msg["id"] == "chatcmpl-9" and msg["model"] == "client/model" and msg["stop_reason"] == "tool_use"
     assert msg["content"][0] == {"type": "thinking", "thinking": "thinking...", "signature": ""}
     assert msg["content"][1] == {"type": "text", "text": "I will read it"}
     assert msg["content"][2] == {"type": "tool_use", "id": "call_1", "name": "read", "input": {"path": "a.py"}}

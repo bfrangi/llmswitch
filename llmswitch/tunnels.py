@@ -31,7 +31,7 @@ class TunnelStatus:
 class TunnelManager:
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.dir = config.hub.state_dir / "tunnels"
+        self.dir = config.gateway.state_dir / "tunnels"
 
     def socket_path(self, name: str):
         return self.dir / f"{name}.sock"

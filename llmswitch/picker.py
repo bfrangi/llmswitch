@@ -31,7 +31,7 @@ def pick(
 ) -> dict[str, Any] | None:
     """Return the chosen model entry, or None for the default. Raises PickerQuit on q."""
     lines, rows = render(models, providers, order)
-    print("ai-hub models" + "\n".join(lines))
+    print("llmswitch models" + "\n".join(lines))
     print(f"\n  Enter = {default_label}; a number or a name to choose; q to quit.")
     print("  Inside Claude Code, /model <name> switches at any time.\n")
     while True:

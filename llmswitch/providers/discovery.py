@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from ..config import ProviderSpec
 
-log = logging.getLogger("ai-hub.discovery")
+log = logging.getLogger("llmswitch.discovery")
 
 
 def _ollama_description(m: dict[str, Any]) -> str:

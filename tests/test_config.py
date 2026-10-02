@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from hub.config import ConfigError, TunnelSpec, parse_config, resolve_config_path
-from hub.init_template import render_template
+from llmswitch.config import ConfigError, TunnelSpec, parse_config, resolve_config_path
+from llmswitch.init_template import render_template
 
 
 def parse(text: str, path: Path = Path("/tmp/c.yaml")):
@@ -21,8 +21,8 @@ providers:
 
 def test_defaults() -> None:
     cfg = parse(MINIMAL)
-    assert cfg.hub.port == 11436
-    assert cfg.hub.base_url == "http://127.0.0.1:11436"
+    assert cfg.gateway.port == 11436
+    assert cfg.gateway.base_url == "http://127.0.0.1:11436"
     assert cfg.providers[0].auth.mode == "none"
     assert cfg.providers[0].models.source == "none"
     assert cfg.claude.command == "claude"
@@ -66,7 +66,7 @@ providers:
         ("providers:\n  a: {protocol: anthropic, base_url: http://a, prefix: x}", "unknown key"),
         ("providers:\n  a: {protocol: anthropic, base_url: http://a, auth: key}", "needs a key"),
         ("providers:\n  a: {protocol: anthropic, base_url: http://a, models: {source: magic}}", "models.source"),
-        ("hub: {port: '11436'}\nproviders:\n  a: {protocol: anthropic, base_url: http://a}", "integer"),
+        ("gateway: {port: '11436'}\nproviders:\n  a: {protocol: anthropic, base_url: http://a}", "integer"),
         ("providers: {}", "at least one"),
         ("bogus: 1\nproviders:\n  a: {protocol: anthropic, base_url: http://a}", "unknown key"),
     ],
@@ -107,10 +107,10 @@ providers:
 
 
 def test_resolve_config_path(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("AI_HUB_CONFIG", raising=False)
+    monkeypatch.delenv("LLMSWITCH_CONFIG", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    assert resolve_config_path() == tmp_path / "ai-hub" / "config.yaml"
-    monkeypatch.setenv("AI_HUB_CONFIG", str(tmp_path / "x.yaml"))
+    assert resolve_config_path() == tmp_path / "llmswitch" / "config.yaml"
+    monkeypatch.setenv("LLMSWITCH_CONFIG", str(tmp_path / "x.yaml"))
     assert resolve_config_path() == tmp_path / "x.yaml"
     assert resolve_config_path(tmp_path / "y.yaml") == tmp_path / "y.yaml"
 

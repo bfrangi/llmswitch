@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
     from ..config import ProviderSpec
 
-log = logging.getLogger("ai-hub.provider")
+log = logging.getLogger("llmswitch.provider")
 
 HOP_BY_HOP = {
     "connection",
@@ -168,11 +168,13 @@ class Provider(ABC):
         try:
             return await self.http.send(req, stream=True)
         except httpx.ConnectError as e:
-            return anthropic_error(502, f"ai-hub: provider '{self.name}' is unreachable at {self.spec.base_url} ({e})")
+            return anthropic_error(
+                502, f"llmswitch: provider '{self.name}' is unreachable at {self.spec.base_url} ({e})"
+            )
         except httpx.TimeoutException as e:
-            return anthropic_error(504, f"ai-hub: provider '{self.name}' timed out ({type(e).__name__})")
+            return anthropic_error(504, f"llmswitch: provider '{self.name}' timed out ({type(e).__name__})")
         except httpx.HTTPError as e:
-            return anthropic_error(502, f"ai-hub: provider '{self.name}' request failed ({type(e).__name__}: {e})")
+            return anthropic_error(502, f"llmswitch: provider '{self.name}' request failed ({type(e).__name__}: {e})")
 
 
 def dumps(payload: Any) -> bytes:

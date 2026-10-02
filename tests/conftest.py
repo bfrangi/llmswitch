@@ -1,4 +1,4 @@
-"""Shared fixtures: a fake upstream that impersonates three kinds of servers, and a hub in front of it."""
+"""Shared fixtures: a fake upstream that impersonates three kinds of servers, and a client in front of it."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import pytest
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from hub.config import Config, parse_config
-from hub.gateway import create_app
+from llmswitch.config import Config, parse_config
+from llmswitch.gateway import create_app
 
 ANTHROPIC_SSE = (
     b'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":3,"output_tokens":0}}}\n\n'
@@ -173,7 +173,7 @@ def make_upstream(rec: Recorder) -> FastAPI:
 
 
 HUB_YAML = """
-hub: {port: 11436}
+gateway: {port: 11436}
 tunnels:
   box: {ssh: box, forward: "11435:localhost:11434"}
 providers:
@@ -222,12 +222,12 @@ def recorder() -> Recorder:
 
 
 @pytest.fixture
-async def hub(config: Config, recorder: Recorder):
+async def client(config: Config, recorder: Recorder):
     upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=make_upstream(recorder)))
     app = create_app(config, http=upstream)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://hub") as client,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://client") as client,
     ):
         yield client
     await upstream.aclose()

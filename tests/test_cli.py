@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from hub import cli
-from hub.config import load_config
+from llmswitch import cli
+from llmswitch.config import load_config
 
 MODELS = [
     {
@@ -68,11 +68,23 @@ def test_config_command(tmp_path: Path, capsys) -> None:
 def test_missing_config_is_a_clean_error(tmp_path: Path, capsys) -> None:
     with pytest.raises(SystemExit) as e:
         cli.main(["--config", str(tmp_path / "none.yaml"), "status"])
-    assert "ai-hub init" in str(e.value)
+    assert "llmswitch init" in str(e.value)
 
 
-def test_shell_help_mentions_passthrough(capsys) -> None:
+def test_help_texts(capsys) -> None:
     with pytest.raises(SystemExit) as e:
-        cli.main_shell(["--help"])
+        cli.main(["--help"])
+    assert e.value.code == 0
+    out = capsys.readouterr().out
+    assert "launches Claude Code" in out and "init" in out and "status" in out
+    with pytest.raises(SystemExit) as e:
+        cli.main(["claude", "--help"])
     assert e.value.code == 0
     assert "passed to Claude Code" in capsys.readouterr().out
+
+
+def test_global_config_flag_is_accepted_before_the_command(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    assert cli.main(["--config", str(path), "init"]) == 0
+    assert cli.main([f"--config={path}", "config"]) == 0
+    assert cli._split_global_config(["--model", "x", "-p", "hi"]) == (None, ["--model", "x", "-p", "hi"])

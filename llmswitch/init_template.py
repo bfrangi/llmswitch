@@ -1,17 +1,17 @@
-"""The starter configuration written by ``ai-hub init``."""
+"""The starter configuration written by ``llmswitch init``."""
 
 from __future__ import annotations
 
 HEADER = """\
-# ai-hub configuration.  Reference: README.md in the ai-hub repository.
-# After editing, run `ai-hub restart` so the gateway picks the changes up.
+# llmswitch configuration.  Reference: README.md in the llmswitch repository.
+# After editing, run `llmswitch restart` so the gateway picks the changes up.
 
-hub:
-  host: 127.0.0.1        # keep loopback: the hub forwards your Anthropic login headers
+gateway:
+  host: 127.0.0.1        # keep loopback: the gateway forwards your Anthropic login headers
   port: 11436
 
-# SSH tunnels the hub opens before talking to remote servers. Each one is a
-# control-master session that `ai-hub status` can see and `ai-hub down` can close.
+# SSH tunnels the gateway opens before talking to remote servers. Each one is a
+# control-master session that `llmswitch status` can see and `llmswitch down` can close.
 tunnels: {}
 #  workstation:
 #    ssh: workstation                  # anything `ssh` accepts: a ~/.ssh/config alias or user@host

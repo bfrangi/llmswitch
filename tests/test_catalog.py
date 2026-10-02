@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from hub.catalog import Catalog, ModelEntry
-from hub.config import ModelEntrySpec, ModelsSpec, ProviderSpec
+from llmswitch.catalog import Catalog, ModelEntry
+from llmswitch.config import ModelEntrySpec, ModelsSpec, ProviderSpec
 
 pytestmark = pytest.mark.anyio
 

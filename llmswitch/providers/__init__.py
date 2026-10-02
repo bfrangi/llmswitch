@@ -1,5 +1,5 @@
 """Provider registry, keyed by wire protocol. Third parties can add one via the
-``ai_hub.providers`` entry-point group."""
+``llmswitch.providers`` entry-point group."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ REGISTRY: dict[str, type[Provider]] = {cls.protocol: cls for cls in (AnthropicPr
 
 def _load_plugins() -> None:
     try:
-        eps = entry_points(group="ai_hub.providers")
+        eps = entry_points(group="llmswitch.providers")
     except TypeError:  # pragma: no cover - very old importlib.metadata
         eps = []
     for ep in eps:

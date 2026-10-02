@@ -1,7 +1,7 @@
 """Configuration model and loader.
 
-Everything the hub knows about the machine comes from one YAML file (by default
-``~/.config/ai-hub/config.yaml``). The loader is strict: unknown keys and bad
+Everything the gateway knows about the machine comes from one YAML file (by default
+``~/.config/llmswitch/config.yaml``). The loader is strict: unknown keys and bad
 types are reported with their path so typos surface immediately.
 """
 
@@ -15,8 +15,8 @@ from typing import Any
 
 import yaml
 
-APP_NAME = "ai-hub"
-CONFIG_ENV_VAR = "AI_HUB_CONFIG"
+APP_NAME = "llmswitch"
+CONFIG_ENV_VAR = "LLMSWITCH_CONFIG"
 
 PROTOCOLS = ("anthropic", "openai")
 MODEL_SOURCES = ("ollama", "openai", "anthropic", "none")
@@ -44,7 +44,7 @@ def default_config_path() -> Path:
 
 
 def resolve_config_path(explicit: str | os.PathLike[str] | None = None) -> Path:
-    """``--config`` flag, then ``$AI_HUB_CONFIG``, then the XDG default."""
+    """``--config`` flag, then ``$LLMSWITCH_CONFIG``, then the XDG default."""
     if explicit:
         return Path(explicit).expanduser()
     from_env = os.environ.get(CONFIG_ENV_VAR)
@@ -83,7 +83,7 @@ def interpolate(value: Any, where: str = "") -> Any:
 
 
 @dataclass
-class HubSettings:
+class GatewaySettings:
     host: str = "127.0.0.1"
     port: int = 11436
     state_dir: Path = field(default_factory=lambda: xdg_state_home() / APP_NAME)
@@ -193,7 +193,7 @@ class ClaudeSettings:
 @dataclass
 class Config:
     path: Path
-    hub: HubSettings
+    gateway: GatewaySettings
     tunnels: dict[str, TunnelSpec]
     providers: list[ProviderSpec]
     claude: ClaudeSettings
@@ -277,21 +277,23 @@ def _float(value: Any, where: str, default: float) -> float:
     return float(value)
 
 
-def _parse_hub(raw: Any) -> HubSettings:
-    m = _mapping(raw, "hub")
+def _parse_gateway(raw: Any) -> GatewaySettings:
+    m = _mapping(raw, "gateway")
     _only_keys(
-        m, ("host", "port", "state_dir", "discovery_ttl", "discovery_timeout", "connect_timeout", "log_level"), "hub"
+        m,
+        ("host", "port", "state_dir", "discovery_ttl", "discovery_timeout", "connect_timeout", "log_level"),
+        "gateway",
     )
-    d = HubSettings()
-    state_dir = _str(m.get("state_dir"), "hub.state_dir")
-    return HubSettings(
-        host=_str(m.get("host"), "hub.host", d.host) or d.host,
-        port=_int(m.get("port"), "hub.port", d.port),
+    d = GatewaySettings()
+    state_dir = _str(m.get("state_dir"), "gateway.state_dir")
+    return GatewaySettings(
+        host=_str(m.get("host"), "gateway.host", d.host) or d.host,
+        port=_int(m.get("port"), "gateway.port", d.port),
         state_dir=Path(state_dir).expanduser() if state_dir else d.state_dir,
-        discovery_ttl=_float(m.get("discovery_ttl"), "hub.discovery_ttl", d.discovery_ttl),
-        discovery_timeout=_float(m.get("discovery_timeout"), "hub.discovery_timeout", d.discovery_timeout),
-        connect_timeout=_float(m.get("connect_timeout"), "hub.connect_timeout", d.connect_timeout),
-        log_level=(_str(m.get("log_level"), "hub.log_level", d.log_level) or d.log_level).lower(),
+        discovery_ttl=_float(m.get("discovery_ttl"), "gateway.discovery_ttl", d.discovery_ttl),
+        discovery_timeout=_float(m.get("discovery_timeout"), "gateway.discovery_timeout", d.discovery_timeout),
+        connect_timeout=_float(m.get("connect_timeout"), "gateway.connect_timeout", d.connect_timeout),
+        log_level=(_str(m.get("log_level"), "gateway.log_level", d.log_level) or d.log_level).lower(),
     )
 
 
@@ -480,11 +482,11 @@ def _parse_claude(raw: Any) -> ClaudeSettings:
 
 def parse_config(raw: Any, path: Path) -> Config:
     top = _mapping(raw, "config")
-    _only_keys(top, ("hub", "tunnels", "providers", "claude"), str(path))
+    _only_keys(top, ("gateway", "tunnels", "providers", "claude"), str(path))
     top = interpolate(top)
     cfg = Config(
         path=path,
-        hub=_parse_hub(top.get("hub")),
+        gateway=_parse_gateway(top.get("gateway")),
         tunnels=_parse_tunnels(top.get("tunnels")),
         providers=_parse_providers(top.get("providers")),
         claude=_parse_claude(top.get("claude")),
@@ -500,7 +502,7 @@ def parse_config(raw: Any, path: Path) -> Config:
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     p = resolve_config_path(path)
     if not p.exists():
-        raise ConfigError(f"no configuration at {p}; run `ai-hub init` to create one")
+        raise ConfigError(f"no configuration at {p}; run `llmswitch init` to create one")
     try:
         raw = yaml.safe_load(p.read_text())
     except yaml.YAMLError as e:
