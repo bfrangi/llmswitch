@@ -1,33 +1,46 @@
-# Handover: AI-Hub Project
+# Handover
 
-## Overview
-The project `ai-hub` aims to provide a unified interface for accessing multiple LLM providers (Local Ollama, Remote Ollama via SSH/Tailscale, and Anthropic Claude) through a single command-line tool. The goal is to allow a user on one machine (e.g., a `pop-os` laptop) to seamlessly use models hosted on another machine (e.g., a `workstation` workstation) alongside their local models and Claude models, all within the Claude Code CLI.
+Short orientation for whoever picks this up next. The README is the user-facing
+reference; this file records why things are the way they are.
 
-## Key Components
-- **`ai-hub` (Gateway):** A Python-based gateway that proxies requests to various model providers. It's intended to be configuration-driven.
-- **`ai-hub-shell` (CLI Wrapper):** A shell script that automates the setup:
-    - Establishing SSH/Tailscale tunnels to remote machines.
-    - Starting the `ai-hub` gateway.
-    - Launching `claude code` with the necessary environment configurations to see the proxied models.
+## What it is
 
-## Current Objectives & Progress
-- [x] Basic implementation of `ai-hub` gateway.
-- [x] Shell script for automating tunnel and gateway startup.
-- [x] Transitioned to `uv` for dependency management and `ruff` for linting/formatting.
-- [ ] **Critical Blocker:** Claude Code is not detecting the models provided by the `ai-hub` gateway; it only shows the default Anthropic models.
-- [ ] **Refinement:** Make `ai-hub-shell` truly generic (remove "workstation" hardcoding) and configuration-driven.
-- [ ] **Refinement:** Improve the shell script's handling of port conflicts (e.g., asking for confirmation before killing a process).
-- [ ] **Refinement:** Implement an "auto-approve" flag for port cleanup in the shell script.
+A local gateway that speaks the Anthropic Messages API to Claude Code and routes each
+request to an upstream by model name. Routing, hosts, ports, credentials, and model
+lists all live in `~/.config/ai-hub/config.yaml`; the code names none of them.
 
-## Technical Details
-- **Repository Location:** `~/ai-hub`
-- **Target Environment:** `pop-os` (development) and `workstation` (remote models).
-- **Dependency Management:** `uv`
-- **Formatting/Linting:** `ruff`
-- **Configuration:** Intended to be stored in `~/.config/ai-hub/` or similar.
+## Decisions
 
-## Immediate Next Steps
-1. **Investigate Model Discovery:** Determine why Claude Code is not picking up the models from the `ai-hub` gateway. Check if there are specific environment variables or proxy settings required by Claude Code to see non-Anthropic models via a local proxy.
-2. **Verify Gateway Output:** Ensure the `ai-hub` gateway is correctly exposing the model list in a format that Claude Code can consume.
-3. **Generalize `ai-hub-shell`:** Replace hardcoded strings with configurable variables.
-4. **Improve Error Handling:** Fix the port conflict detection and add the requested confirmation/auto-approve logic.
+- **Route, don't translate, whenever possible.** Ollama (0.14+), LM Studio, vLLM and
+  Anthropic all speak `/v1/messages`, so the `anthropic` provider is a byte-for-byte
+  pass-through with the model field rewritten. That preserves caching markers, beta
+  headers, streaming pings, usage headers, and error wording, all of which Claude Code
+  relies on (code.claude.com/docs/en/llm-gateway-protocol). The `openai` provider is a
+  translation layer for servers that have nothing better.
+- **Credentials are per provider.** `passthrough` forwards the client's auth headers,
+  which is what makes a Claude subscription login work; everything else strips them.
+- **Shared lifecycle.** The gateway is a detached daemon and each tunnel an SSH
+  control-master session, both reused across launches and closed by `ai-hub down`.
+  The previous script's `exec claude` skipped its own cleanup trap and leaked a gateway
+  and eight tunnels; nothing here depends on an EXIT trap.
+- **The picker lives in the launcher.** Claude Code's own gateway discovery filters
+  model ids to ones containing `claude`/`anthropic` and needs a credential variable,
+  so it cannot show Ollama models to a subscription user. The launcher picker and
+  `/model <name>` cover that.
+- **Per-provider `launch.env` with `{model}` placeholders** replaces hardcoding Claude
+  Code variable names. The template seeds the ones Ollama's own `ollama launch claude`
+  sets (attribution header off, token reminder off, background models pinned).
+
+## Verified against
+
+Ollama 0.32.1 (local) and 0.34.4 (remote): `/v1/messages` ignores unknown fields and
+headers, relaxes unsupported thinking instead of erroring, has no `count_tokens`
+(plain-text 404, which the hub turns into an API-shaped 404), and takes its context
+window from `OLLAMA_CONTEXT_LENGTH` on the server, not from the request.
+
+## Open ideas
+
+- `ai-hub status` could read Ollama's `/api/ps` to show each loaded model's actual
+  context window.
+- An `ollama` protocol provider could expose `/api/chat` for non-Claude clients if
+  the hub is ever meant to front tools other than Claude Code.
