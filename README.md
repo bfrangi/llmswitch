@@ -15,73 +15,80 @@ It allows you to unify disparate model providers (Local Ollama, Remote Ollama, A
 
 ### 1. Prerequisites
 
-Ensure you have `uv` or `pip` installed. 
+Ensure you have [`uv`](https://github.com/astral-sh/uv) installed.
 
-To use the remote orchestration feature, you must have SSH access to your remote machine (`workstation`) and have it configured in your `~/.ssh/config` as follows:
-
-```text
-Host workstation
-    HostName <tailnet-ip>
-    User bernat
-    IdentityFile ~/.ssh/id_ed25519
-    # This ensures we only use this host via the established identity
-```
+To use the remote orchestration feature, you must have SSH access to your remote machine and have it configured in your `~/.ssh/config`.
 
 ### 2. Install the package
 
+Run this command from the project directory:
+
 ```bash
-# Using uv (Recommended)
 uv tool install .
-
-# Using pip
-pip install .
 ```
 
-### 3. Setup the Orchestrator
+This makes the `ai-hub-shell` command available globally in your terminal.
 
-Make the script executable:
+## Configuration
+
+The tool looks for configuration in two places:
+1.  The current working directory: `./config.yaml`
+2.  Your user config directory: `~/.config/ai-hub/config.yaml`
+
+### Automatic Setup
+
+You can automatically generate a default configuration file in `~/.config/ai-hub/config.yaml` by running:
 
 ```bash
-chmod +x scripts/ai-hub-shell
+ai-hub-shell --init
 ```
 
-(Optional) Move it to your path:
-```bash
-sudo cp scripts/ai-hub-shell /usr/local/bin/ai-hub-shell
+### Manual Setup
+
+If you prefer to create it manually, use the following structure:
+
+```yaml
+HUB_PORT: 11436
+LOCAL_OLLAMA_PORT: 11435
+REMOTE_OLLAMA_PORT: 11434
+REMOTE_HOST: "your-remote-host-name"
+HUB_LOG: "$HOME/Documents/ai-hub/hub.log"
 ```
 
 ## Usage
 
-### Standard Gateway Mode
-Run the gateway normally (it defaults to port `11436` to avoid conflicts):
-```bash
-ai-hub
-```
-Then, in another terminal, run Claude Code pointing to the gateway:
-```bash
-export OLLAMA_HOST=http://localhost:11436
-claude
-```
-
 ### Orchestration Mode (Recommended)
-Launch the entire ecosystem (Tunnel, Gateway, and Claude) with one command. No environment variables required:
+
+Launch the entire ecosystem (Tunnel, Gateway, and Claude) with one command. This mode automatically reads your configuration and handles the lifecycle of the background processes.
+
 ```bash
 ai-hub-shell [any-claude-flags]
 ```
-Example:
-```bash
-ai-hub-shell --resume
-```
+
+**Examples:**
+
+*   **Default startup:** `ai-hub-shell`
+*   **With a specific config file:** `ai-hub-shell ./my-project-config.yaml`
+*   **Forcing a stale tunnel to close:** `ai-hub-shell --force`
+*   **Resuming a session:** `ai-hub-shell --resume`
+
 When you exit Claude Code, the tunnel and gateway will automatically shut down.
+
+### Standard Gateway Mode
+
+If you only want to run the gateway (e.g., to use it with other tools), run it using `uv`:
+
+```bash
+# Using default port 11436
+uv run python -m hub.proxy
+
+# Using a custom port from config
+HUB_PORT=1234 uv run python -m hub.proxy
+```
 
 ## Uninstallation
 
 ### If installed via `uv`:
 ```bash
 uv tool uninstall ai-hub
-```
-
-### If installed via `pip`:
-```bash
-pip uninstall ai-hub
 ```

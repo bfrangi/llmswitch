@@ -4,8 +4,39 @@
 # Launches Tunnel + Gateway + Claude in one command.
 
 # 1. Setup environment
-# Load configuration from files.
-CONFIG_FILE="${1:-$(ls config.yaml ~/.config/ai-hub/config.yaml 2>/dev/null | head -n 1)}"
+INIT_MODE=false
+FORCE=false
+ARGS=()
+
+# Parse flags
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -f|--force) FORCE=true; shift ;;
+        --init) INIT_MODE=true; shift ;;
+        *) ARGS+=("$1"); shift ;;
+    esac
+done
+
+# Handle --init mode
+if [ "$INIT_MODE" = true ]; then
+    CONFIG_DIR="$HOME/.config/ai-hub"
+    mkdir -p "$CONFIG_DIR"
+    CONFIG_PATH="$CONFIG_DIR/config.yaml"
+
+    echo "Creating default configuration at $CONFIG_PATH..."
+    cat <<EOF > "$CONFIG_PATH"
+HUB_PORT: 11436
+LOCAL_OLLAMA_PORT: 11435
+REMOTE_OLLAMA_PORT: 11434
+REMOTE_HOST: "workstation"
+HUB_LOG: "\$HOME/Documents/ai-hub/hub.log"
+EOF
+    echo "Done. You can now run ai-hub-shell normally."
+    exit 0
+fi
+
+# Load Configuration
+CONFIG_FILE="${ARGS[0]:-$(ls config.yaml ~/.config/ai-hub/config.yaml 2>/dev/null | head -n 1)}"
 
 if [ -z "$CONFIG_FILE" ]; then
     echo "Error: No configuration file found. Please provide one as an argument or place it in the current directory or ~/.config/ai-hub/config.yaml"
@@ -27,16 +58,6 @@ HUB_LOG=$(get_cfg "['HUB_LOG'] or '$HOME/Documents/ai-hub/hub.log'")
 
 # Detect Claude path
 CLAUDE_CMD=$(which claude 2>/dev/null || echo "$HOME/.local/bin/claude")
-
-# Parse flags manually to support --force and pass others to Claude
-FORCE=false
-ARGS=()
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        -f|--force) FORCE=true; shift ;;
-        *) ARGS+=("$1"); shift ;;
-    esac
-done
 
 # Initialize PIDs for cleanup
 TUNNEL_PID=0
