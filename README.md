@@ -117,6 +117,7 @@ providers:                               # a mapping (or a list with `name:` key
         CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"
         ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"      # {model} {upstream_model} {provider} {details.<key>}
         CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"   # a placeholder with no value drops the variable
 
 claude:
   command: claude
@@ -163,8 +164,16 @@ Token counting is not available, so Claude Code estimates context usage itself.
 - Claude Code's own gateway model discovery (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`)
   works against `/v1/models` but only lists ids containing `claude` or `anthropic`, and
   only when a credential variable is set. The `ai-hub-shell` picker has no such limits.
-- Local models need a large context window. For Ollama that is set on the server
-  (`OLLAMA_CONTEXT_LENGTH=65536 ollama serve` or the app's settings), not per request.
+- Claude Code does not know names like `workstation/qwen3-coder:30b`, so it assumes a 200k
+  context window and says so once at startup. The template's `launch.env` sets
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from the model's reported window, and pins the
+  background and subagent model slots to the chosen model so no hidden request goes
+  to Anthropic while you work on a local model.
+- Local models need a large context window: Claude Code's system prompt alone is
+  tens of thousands of tokens. Ollama sizes the window from the server's memory
+  (4k below 24 GiB) unless `OLLAMA_CONTEXT_LENGTH` is set on the server, for example
+  `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`. It cannot be set per request through the
+  Anthropic API. `curl http://host:11434/api/ps` shows the window a loaded model got.
 
 ## Command reference
 

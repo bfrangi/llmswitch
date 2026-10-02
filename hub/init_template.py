@@ -45,6 +45,7 @@ LOCAL_BLOCK = """
         ANTHROPIC_DEFAULT_SONNET_MODEL: "{{model}}"
         ANTHROPIC_DEFAULT_OPUS_MODEL: "{{model}}"
         CLAUDE_CODE_SUBAGENT_MODEL: "{{model}}"
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{{details.context_length}}"  # the model's window, so compaction is timed right
 """
 
 FOOTER = """
@@ -61,6 +62,7 @@ FOOTER = """
 #        ANTHROPIC_DEFAULT_SONNET_MODEL: "{model}"
 #        ANTHROPIC_DEFAULT_OPUS_MODEL: "{model}"
 #        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
+#        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
 #  some-openai-server:                  # anything that only speaks OpenAI chat completions
 #    protocol: openai
