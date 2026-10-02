@@ -44,3 +44,11 @@ window from `OLLAMA_CONTEXT_LENGTH` on the server, not from the request.
   context window.
 - An `ollama` protocol provider could expose `/api/chat` for non-Claude clients if
   the gateway is ever meant to front tools other than Claude Code.
+- Named launch profiles. The launcher already treats the agent as data: it brings
+  the gateway up, picks a model, and execs `claude.command` with `ANTHROPIC_BASE_URL`
+  and the per-provider `launch.env`. Only two things are fixed in code: the `--model`
+  flag name and the `ANTHROPIC_BASE_URL` variable. Turning the single `claude:` section
+  into a list of launch targets, each with its own command, model flag, base-URL
+  variable, and env, would allow `llmswitch opencode` or `llmswitch cline` next to
+  `llmswitch claude`, all sharing one gateway and one model catalog. Any agent that
+  speaks the Anthropic Messages API to a configurable base URL qualifies.
