@@ -1,9 +1,0 @@
-providers:
-  - name: "local-ollama"
-    type: "ollama"
-    endpoint: "http://127.0.0.1:11434"
-    prefix: "[local]"
-  - name: "anthropic"
-    type: "anthropic"
-    endpoint: "https://api.anthropic.com"
-    api_key: "dummy-key"

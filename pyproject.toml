@@ -1,9 +1,10 @@
 [project]
 name = "ai-hub"
-version = "0.1.0"
-description = "A modular, config-driven model orchestration gateway"
+version = "0.2.0"
+description = "One local Anthropic-compatible endpoint that routes Claude Code to Anthropic, Ollama, and any other LLM server by model name"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
@@ -12,7 +13,11 @@ dependencies = [
 ]
 
 [project.scripts]
-ai-hub-shell = "hub.proxy:main"
+ai-hub = "hub.cli:main"
+ai-hub-shell = "hub.cli:main_shell"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.8"]
 
 [build-system]
 requires = ["hatchling"]
@@ -20,3 +25,25 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["hub"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "TC", "RUF", "C4", "PIE", "PERF", "RET", "PTH"]
+ignore = ["E501", "RET505", "RET506", "PERF203"]
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
+exempt-modules = ["typing", "fastapi", "starlette"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hub"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "RUF012", "TC"]

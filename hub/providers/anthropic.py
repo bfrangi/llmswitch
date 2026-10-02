@@ -1,47 +1,57 @@
+"""Pass-through to any upstream that speaks the Anthropic Messages API.
+
+That is Anthropic itself, Ollama, and a growing list of local servers. The request
+goes upstream unchanged except for the model name (and any configured ``compat``
+surgery); the response streams back byte-for-byte, so caching markers, beta
+headers, usage, and error wording all survive.
+"""
+
 from __future__ import annotations
-import httpx
-from typing import TYPE_CHECKING, Any
 
-from .base import BaseProvider
+from typing import TYPE_CHECKING
 
-class AnthropicProvider(BaseProvider):
-    async def list_models(self) -> list[dict[str, Any]]:
-        # For now, return a curated list of Claude models.
-        models = [
-            "claude-3-5-sonnet-20240620",
-            "claude-3-opus-20240229",
-            "claude-3-haiku-20240307"
-        ]
+from fastapi.responses import JSONResponse, Response
 
-        return [
-            {
-                "name": m,
-                "display_name": f"{self.prefix} {m}" if self.prefix else m,
-                "provider_name": self.name
-            } for m in models
-        ]
+from .base import Provider, anthropic_error, dumps, passthrough_response
+from .discovery import discover_models
 
-    async def generate(self, model: str, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            try:
-                headers = {
-                    "x-api-key": self.config.api_key or "",
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                }
-                payload = {
-                    "model": model,
-                    "max_tokens": kwargs.get("max_tokens", 1024),
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-                response = await client.post(f"{self.endpoint}/v1/messages", json=payload, headers=headers)
-                response.raise_for_status()
-                data = response.json()
+if TYPE_CHECKING:
+    from ..catalog import ModelEntry
+    from .base import Incoming
 
-                return {
-                    "response": data["content"][0]["text"],
-                    "model": model,
-                    "done": True
-                }
-            except Exception as e:
-                return {"error": f"Anthropic generation error: {str(e)}"}
+
+class AnthropicProvider(Provider):
+    protocol = "anthropic"
+
+    async def discover(self) -> list[ModelEntry]:
+        return await discover_models(self.spec, self.http, self.auth_headers("x-api-key"), self.static_entries())
+
+    async def messages(self, inc: Incoming, upstream_model: str) -> Response:
+        return await self._forward(inc, "/v1/messages", upstream_model)
+
+    async def count_tokens(self, inc: Incoming, upstream_model: str) -> Response:
+        resp = await self._forward(inc, "/v1/messages/count_tokens", upstream_model, raw=True)
+        if isinstance(resp, JSONResponse):
+            return resp
+        # Upstreams without a counting endpoint (Ollama answers a plain-text 404) get a
+        # proper API error so the client falls back to its own estimate.
+        if resp.status_code in (404, 405) and "json" not in resp.headers.get("content-type", ""):
+            await resp.aclose()
+            return anthropic_error(404, f"ai-hub: provider '{self.name}' has no token counting endpoint")
+        return passthrough_response(resp)
+
+    def _prepare_body(self, inc: Incoming, upstream_model: str) -> bytes:
+        payload = inc.json or {}
+        if payload.get("model") == upstream_model and self.spec.compat.is_noop():
+            return inc.body  # nothing to change: keep the client's exact bytes
+        payload = dict(payload)
+        payload["model"] = upstream_model
+        return dumps(self.apply_compat(payload))
+
+    async def _forward(self, inc: Incoming, path: str, upstream_model: str, raw: bool = False):
+        body = self._prepare_body(inc, upstream_model)
+        headers = self.upstream_headers(inc, default_auth_header="x-api-key")
+        resp = await self.send("POST", self.url(path, inc.query), headers, body)
+        if isinstance(resp, JSONResponse) or raw:
+            return resp
+        return passthrough_response(resp)
