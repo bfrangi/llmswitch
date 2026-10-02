@@ -1,0 +1,88 @@
+"""The starter configuration written by ``ai-hub init``."""
+
+from __future__ import annotations
+
+HEADER = """\
+# ai-hub configuration.  Reference: README.md in the ai-hub repository.
+# After editing, run `ai-hub restart` so the gateway picks the changes up.
+
+hub:
+  host: 127.0.0.1        # keep loopback: the hub forwards your Anthropic login headers
+  port: 11436
+
+# SSH tunnels the hub opens before talking to remote servers. Each one is a
+# control-master session that `ai-hub status` can see and `ai-hub down` can close.
+tunnels: {}
+#  workstation:
+#    ssh: workstation                  # anything `ssh` accepts: a ~/.ssh/config alias or user@host
+#    forward: 11435:localhost:11434    # same syntax as `ssh -L`; a list of them is fine too
+
+# Providers are the upstream servers. In Claude Code a model is addressed as
+# <provider>/<model>, e.g. `--model local/qwen3:14b` or `/model workstation/qwen3-coder:30b`.
+providers:
+  anthropic:
+    protocol: anthropic
+    base_url: https://api.anthropic.com
+    auth: passthrough                   # your Claude Code login (or API key) goes through untouched
+    match: ["claude-*"]                 # bare names such as claude-opus-5-5 route here without a prefix
+    models:                             # aliases Claude Code expands by itself
+      - {id: default, bare: true, description: "whatever Claude Code would pick on its own"}
+      - {id: opus, bare: true, description: "alias resolved by Claude Code"}
+      - {id: sonnet, bare: true, description: "alias resolved by Claude Code"}
+      - {id: haiku, bare: true, description: "alias resolved by Claude Code"}
+"""
+
+LOCAL_BLOCK = """
+  local:
+    protocol: anthropic                 # Ollama speaks the Anthropic Messages API natively
+    base_url: {base_url}
+    models: ollama                      # list models with Ollama's /api/tags
+    launch:                             # applied when a model from this provider is chosen
+      env:
+        CLAUDE_CODE_ATTRIBUTION_HEADER: "0"       # keep Claude Code's attribution block out of the prompt cache
+        CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"  # that reminder breaks Ollama's KV cache on every turn
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{{model}}"  # background tasks and subagents stay on this model too
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "{{model}}"
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "{{model}}"
+        CLAUDE_CODE_SUBAGENT_MODEL: "{{model}}"
+"""
+
+FOOTER = """
+#  workstation:                        # an Ollama on another machine, through the tunnel above
+#    protocol: anthropic
+#    base_url: http://127.0.0.1:11435   # the local end of the tunnel
+#    tunnel: workstation
+#    models: ollama
+#    launch:
+#      env:
+#        CLAUDE_CODE_ATTRIBUTION_HEADER: "0"
+#        CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"
+#        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"
+#        ANTHROPIC_DEFAULT_SONNET_MODEL: "{model}"
+#        ANTHROPIC_DEFAULT_OPUS_MODEL: "{model}"
+#        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
+
+#  some-openai-server:                  # anything that only speaks OpenAI chat completions
+#    protocol: openai
+#    base_url: https://host.example/v1
+#    api_key: ${SOME_API_KEY}           # ${VAR} and ${VAR:-default} are expanded
+#    models: openai                     # GET /v1/models
+
+claude:
+  command: claude
+  default_model: null                   # null: Claude Code's own default when you just press Enter
+  env: {}                               # extra environment for every launch; {model} placeholders work here too
+"""
+
+
+def render_template(local_ollama: str | None) -> str:
+    local = (
+        LOCAL_BLOCK.format(base_url=local_ollama)
+        if local_ollama
+        else "\n".join(
+            ("#" + line if line.strip() else line)
+            for line in LOCAL_BLOCK.format(base_url="http://127.0.0.1:11434").splitlines()
+        )
+        + "\n"
+    )
+    return HEADER + local + FOOTER
