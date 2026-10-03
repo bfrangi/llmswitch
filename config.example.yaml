@@ -34,12 +34,10 @@ providers:
       env:
         CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"  # that reminder breaks Ollama's KV cache on every turn
         CLAUDE_CODE_AUTO_MODE_SERVER: "0"         # a local server cannot review actions; use Claude Code's own classifier
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"  # background tasks (titles, summaries) stay on this model
-        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"     # subagents too
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"  # the model's window, so compaction is timed right
-        # Do not pin ANTHROPIC_DEFAULT_SONNET_MODEL / _OPUS_MODEL or turn CLAUDE_CODE_ATTRIBUTION_HEADER off:
-        # auto mode's safety classifier resolves through those slots, must run on a Claude model, and goes to
-        # Anthropic through the gateway with that header as its identification.
+        # Leave the ANTHROPIC_DEFAULT_*_MODEL slots alone. Through a gateway, background tasks already follow
+        # the main model; auto mode's classifier must resolve to a Claude model; and /model's built-in rows
+        # (Opus, Sonnet, Haiku) would otherwise silently point at this model and swallow its own row.
 
 #  workstation:                        # an Ollama on another machine, through the tunnel above
 #    protocol: anthropic
@@ -50,8 +48,6 @@ providers:
 #      env:
 #        CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"
 #        CLAUDE_CODE_AUTO_MODE_SERVER: "0"
-#        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"
-#        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
 #        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
 #  some-openai-server:                  # anything that only speaks OpenAI chat completions

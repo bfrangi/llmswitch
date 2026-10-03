@@ -116,11 +116,10 @@ providers:                               # a mapping (or a list with `name:` key
     models: ollama                       # GET /api/tags
     launch:                              # environment for Claude Code when a model from here is chosen
       env:
-        CLAUDE_CODE_ATTRIBUTION_HEADER: "0"
         CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"      # {model} {upstream_model} {provider} {details.<key>}
-        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
-        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"   # a placeholder with no value drops the variable
+        CLAUDE_CODE_AUTO_MODE_SERVER: "0"
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"   # {model} {upstream_model} {provider} {details.<key>};
+                                                                     # a placeholder with no value drops the variable
 
 claude:
   command: claude
@@ -173,15 +172,16 @@ Token counting is not available, so Claude Code estimates context usage itself.
   credential variable rather than a login, and only keeps ids containing `claude`.
 - Claude Code does not know names like `workstation/qwen3-coder:30b`, so it assumes a 200k
   context window and says so once at startup. The template's `launch.env` sets
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from the model's reported window, and pins the
-  background-task and subagent slots to the chosen model.
-- Auto mode's safety classifier is the exception: it must run on a Claude model, so
-  it goes to Anthropic through the gateway even while you work on a local model. The
-  template therefore leaves the Sonnet and Opus slots unpinned, keeps the attribution
-  header on (it identifies classifier requests), and sets
-  `CLAUDE_CODE_AUTO_MODE_SERVER=0` so Claude Code does not first wait for a review
-  verdict a local server will never produce. If you would rather send nothing to
-  Anthropic, launch with `--permission-mode acceptEdits` and approve actions yourself.
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from the model's reported window. Background tasks
+  such as session titles already follow the main model through a gateway, so nothing
+  else needs pinning. Avoid pinning the `ANTHROPIC_DEFAULT_*_MODEL` slots to a local
+  model: Claude Code resolves its `/model` rows and its safety classifier through them,
+  so Opus, Sonnet, and Haiku would silently become that model and its own row vanish.
+- Auto mode's safety classifier must run on a Claude model, so it goes to Anthropic
+  through the gateway even while you work on a local model. That makes auto mode
+  depend on Anthropic access. The template sets `CLAUDE_CODE_AUTO_MODE_SERVER=0` so
+  Claude Code does not first wait for a review verdict a local server never produces.
+  To send nothing to Anthropic, launch with `--permission-mode acceptEdits`.
 - Local models need a large context window: Claude Code's system prompt alone is
   tens of thousands of tokens. Ollama sizes the window from the server's memory
   (4k below 24 GiB) unless `OLLAMA_CONTEXT_LENGTH` is set on the server, for example
@@ -216,7 +216,8 @@ Gateway endpoints: `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /
 | Local model answers are cut short or forgetful | raise the server's context length (see above) |
 | `400 ... Extra inputs are not permitted` from a non-Anthropic upstream | add a `compat.drop_fields` entry naming the field |
 | Nothing happens, then a timeout | `llmswitch logs -n 50` shows the upstream the request went to |
-| `... is temporarily unavailable, so auto mode cannot determine the safety of ...` | the classifier was routed to a local model and queued behind your turn; keep `ANTHROPIC_DEFAULT_SONNET_MODEL`/`_OPUS_MODEL` unpinned so it reaches Anthropic, as the template does |
+| `... is temporarily unavailable, so auto mode cannot determine the safety of ...` | the classifier was routed to a local model and queued behind your turn; remove any `ANTHROPIC_DEFAULT_*_MODEL` pins from `launch.env` so it reaches Anthropic |
+| `/model` highlights Sonnet while a local model answers, or the local model has no row | an `ANTHROPIC_DEFAULT_SONNET_MODEL` pin made the Sonnet row resolve to it; remove the pin |
 
 ## Extending
 
