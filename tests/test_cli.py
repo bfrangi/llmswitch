@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -88,3 +89,22 @@ def test_global_config_flag_is_accepted_before_the_command(tmp_path: Path) -> No
     assert cli.main(["--config", str(path), "init"]) == 0
     assert cli.main([f"--config={path}", "config"]) == 0
     assert cli._split_global_config(["--model", "x", "-p", "hi"]) == (None, ["--model", "x", "-p", "hi"])
+
+
+def test_build_command_adds_picker_rows(config) -> None:
+    cmd = cli.build_command(config, "ollama/qwen3:14b", ["--resume"], MODELS)
+    assert cmd[:3] == ["claude", "--model", "ollama/qwen3:14b"] and cmd[-1] == "--resume"
+    lineup = json.loads(cmd[cmd.index("--settings") + 1])["modelPicker"]
+    assert lineup["replaceBuiltInOptions"] is False
+    assert [r["model"] for r in lineup["options"]] == ["ollama/qwen3:14b"], "bare aliases are already built in"
+    assert lineup["options"][0]["label"].endswith("(ollama)")
+    # the user's own --settings wins, and the switch turns it off
+    assert "--settings" not in cli.build_command(config, None, ["--settings", "x.json"], MODELS)[:-2]
+    config.claude.model_picker = False
+    assert "--settings" not in cli.build_command(config, None, [], MODELS)
+
+
+def test_model_picker_switch_parses(tmp_path: Path) -> None:
+    path = tmp_path / "c.yaml"
+    path.write_text("providers:\n  a: {protocol: anthropic, base_url: http://a.test}\nclaude: {model_picker: false}\n")
+    assert load_config(path).claude.model_picker is False

@@ -116,6 +116,43 @@ def launch_env(config: Config, chosen: str | None, models: list[dict[str, Any]])
     return env
 
 
+def picker_rows(models: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Rows for Claude Code's /model picker: every provider-prefixed model the gateway routes.
+
+    Bare names (Claude aliases, claude-* ids) are already in Claude Code's own lineup.
+    """
+    rows = []
+    for m in models:
+        launch_id = m["launch_id"]
+        if "/" not in launch_id:
+            continue
+        row = {"model": launch_id, "label": f"{m.get('display_name') or m['upstream_id']}  ({m['provider']})"}
+        if m.get("description"):
+            row["description"] = m["description"]
+        rows.append(row)
+    return rows
+
+
+def _has_flag(args: list[str], flag: str) -> bool:
+    return any(a == flag or a.startswith(flag + "=") for a in args)
+
+
+def build_command(config: Config, chosen: str | None, rest: list[str], models: list[dict[str, Any]]) -> list[str]:
+    cmd = [config.claude.command, *config.claude.args]
+    if chosen:
+        cmd += ["--model", chosen]
+    if (
+        config.claude.model_picker
+        and not _has_flag(rest, "--settings")
+        and not _has_flag(config.claude.args, "--settings")
+    ):
+        rows = picker_rows(models)
+        if rows:
+            cmd += ["--settings", json.dumps({"modelPicker": {"options": rows, "replaceBuiltInOptions": False}})]
+    cmd += rest
+    return cmd
+
+
 def ensure_up(config: Config, force: bool = False) -> GatewayManager:
     tm = TunnelManager(config)
     for spec in config.tunnels_in_use():
@@ -333,12 +370,10 @@ def launch(argv: list[str]) -> int:
         elif chosen is None:
             chosen = config.claude.default_model
         env = launch_env(config, chosen, data["models"])
-        cmd = [config.claude.command, *config.claude.args]
-        if chosen:
-            cmd += ["--model", chosen]
-        cmd += rest
+        cmd = build_command(config, chosen, rest, data["models"])
         exe = shutil.which(config.claude.command) or config.claude.command
-        print(f"launching: {' '.join(cmd)}  (ANTHROPIC_BASE_URL={env['ANTHROPIC_BASE_URL']})")
+        shown = " ".join(a if not a.startswith("{") else "<model picker lineup>" for a in cmd)
+        print(f"launching: {shown}  (ANTHROPIC_BASE_URL={env['ANTHROPIC_BASE_URL']})")
         os.execvpe(exe, cmd, env)
     except FileNotFoundError:
         _err(f"cannot run '{config.claude.command}'; set claude.command in {config.path}")

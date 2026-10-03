@@ -188,6 +188,7 @@ class ClaudeSettings:
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     default_model: str | None = None
+    model_picker: bool = True  # hand Claude Code a /model lineup with every routable model
 
 
 @dataclass
@@ -471,12 +472,13 @@ def _parse_providers(raw: Any) -> list[ProviderSpec]:
 
 def _parse_claude(raw: Any) -> ClaudeSettings:
     m = _mapping(raw, "claude")
-    _only_keys(m, ("command", "args", "env", "default_model"), "claude")
+    _only_keys(m, ("command", "args", "env", "default_model", "model_picker"), "claude")
     return ClaudeSettings(
         command=_str(m.get("command"), "claude.command", "claude") or "claude",
         args=_str_list(m.get("args"), "claude.args"),
         env=_str_dict(m.get("env"), "claude.env"),
         default_model=_str(m.get("default_model"), "claude.default_model"),
+        model_picker=_bool(m.get("model_picker"), "claude.model_picker", True),
     )
 
 
