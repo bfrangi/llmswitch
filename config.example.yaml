@@ -7,10 +7,7 @@ gateway:
 
 # SSH tunnels the gateway opens before talking to remote servers. Each one is a
 # control-master session that `llmswitch status` can see and `llmswitch down` can close.
-tunnels:
-  workstation:
-    ssh: workstation                         # ~/.ssh/config alias, reached over Tailscale
-    forward: 11435:localhost:11434      # Ollama on workstation listens on localhost only
+tunnels: {}
 #  workstation:
 #    ssh: workstation                  # anything `ssh` accepts: a ~/.ssh/config alias or user@host
 #    forward: 11435:localhost:11434    # same syntax as `ssh -L`; a list of them is fine too
@@ -41,17 +38,6 @@ providers:
         # Leave the ANTHROPIC_DEFAULT_*_MODEL slots alone. Through a gateway, background tasks already follow
         # the main model; auto mode's classifier must resolve to a Claude model; and /model's built-in rows
         # (Opus, Sonnet, Haiku) would otherwise silently point at this model and swallow its own row.
-
-  workstation:
-    protocol: anthropic                 # Ollama on the Mac, through the tunnel above
-    base_url: http://127.0.0.1:11435
-    tunnel: workstation
-    models: ollama
-    launch:
-      env:
-        CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"
-        CLAUDE_CODE_AUTO_MODE_SERVER: "0"
-        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
 #  workstation:                        # an Ollama on another machine, through the tunnel above
 #    protocol: anthropic

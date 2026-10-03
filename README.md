@@ -5,15 +5,15 @@ Anthropic's models, on an Ollama on this machine, on an Ollama on another machin
 or on any OpenAI-compatible server, and switch between them by model name.
 
 ```
-                          ┌───────────────────────── llmswitch gateway (127.0.0.1:11436) ───┐
- Claude Code ──────────►  │  POST /v1/messages   model: "workstation/qwen3-coder:30b"           │
- ANTHROPIC_BASE_URL       │        │                                                        │
-                          │        ▼  route by model name                                   │
-                          │   claude-*  ──────────► api.anthropic.com   (your login, untouched)
-                          │   local/…   ──────────► http://127.0.0.1:11434   (Ollama)        │
-                          │   workstation/…  ──────────► http://127.0.0.1:11435 ──ssh tunnel──► workstation
-                          │   other/…   ──────────► https://host/v1   (OpenAI-style, translated)
-                          └────────────────────────────────────────────────────────────────┘
+                   ┌──────────────────────── llmswitch gateway (127.0.0.1:11436) ──────────────────┐
+ Claude Code ────► │  POST /v1/messages   model: "workstation/qwen3-coder:30b"                      │
+ ANTHROPIC_BASE_URL│        │                                                                       │
+                   │        ▼  route by model name                                                  │
+                   │   claude-*       ─────► api.anthropic.com         (your login, untouched)      │
+                   │   local/…        ─────► http://127.0.0.1:11434    (Ollama on this machine)     │
+                   │   workstation/…  ─────► http://127.0.0.1:11435 ──ssh tunnel──► another machine │
+                   │   other/…        ─────► https://host/v1           (OpenAI-style, translated)   │
+                   └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The gateway speaks the Anthropic Messages API. Upstreams that speak it too (Anthropic,
@@ -25,21 +25,24 @@ Nothing in the code names a host, a port, or a model. The configuration file doe
 
 ## Install
 
-Requires Python 3.10+ and [`uv`](https://github.com/astral-sh/uv); `ssh` for tunnels.
+Linux or macOS with Python 3.10+ and [`uv`](https://github.com/astral-sh/uv); `ssh` for
+tunnels; [Claude Code](https://code.claude.com) as the client (tested with 2.1.286).
+Windows is not supported.
 
 ```bash
-uv tool install .                 # from this directory; rerun with --reinstall to upgrade
+uv tool install git+https://github.com/bfrangi/llmswitch   # or `uv tool install .` from a clone
 llmswitch init                    # writes ~/.config/llmswitch/config.yaml
 $EDITOR ~/.config/llmswitch/config.yaml
 llmswitch                         # starts what is needed, shows the model picker, launches Claude Code
 ```
 
+Upgrade with `uv tool upgrade llmswitch` (git install) or `uv tool install . --reinstall` (clone).
+
 `llmswitch init` pre-fills a `local` provider if an Ollama answers on this machine, and
 leaves commented examples for a tunnelled remote machine and an OpenAI-style server.
 
-[config.example.yaml](config.example.yaml) is a complete real configuration (this repository's
-author's: a local Ollama, a remote one through an SSH tunnel, and Anthropic), kept identical
-to the live file on the author's machine.
+[config.example.yaml](config.example.yaml) is exactly what `llmswitch init` writes when a
+local Ollama is detected.
 
 ## Daily use
 
@@ -143,6 +146,11 @@ claude:
 - The default, `none`, strips the client's credentials. Your Anthropic token never
   reaches a server you did not mark `passthrough`.
 
+The gateway has no authentication of its own. It listens on loopback by default, so only
+processes on this machine can use it, and they can reach your Ollama servers through it
+exactly as they could directly; Anthropic still requires the caller's own credentials.
+Binding to `0.0.0.0` hands that access to the whole network.
+
 ### Remote machines
 
 A tunnel is the zero-setup option: it needs only `ssh` access, and the gateway manages it
@@ -160,6 +168,8 @@ Token counting is not available, so Claude Code estimates context usage itself.
 
 ## What Claude Code sees
 
+- Tested with Claude Code 2.1.286. `CLAUDE_CODE_AUTO_MODE_SERVER` needs 2.1.271 or
+  later; older versions ignore it.
 - `llmswitch` sets `ANTHROPIC_BASE_URL` to the gateway and passes `--model` when you
   chose one. A value in your `~/.claude/settings.json` `env` block would override it.
 - Requests to Anthropic go through with headers, body, and query string unchanged, so
@@ -238,6 +248,8 @@ uv run pytest
 uv run ruff check llmswitch tests && uv run ruff format llmswitch tests
 uv run llmswitch gateway --config config.example.yaml --port 11499   # foreground, verbose
 ```
+
+Design notes live in [docs/DESIGN.md](docs/DESIGN.md). CI runs ruff and pytest on Python 3.10 to 3.13.
 
 Layout: `llmswitch/config.py` (schema and loader), `llmswitch/catalog.py` (discovery and routing),
 `llmswitch/providers/` (`anthropic` pass-through, `openai` translation, discovery sources),
