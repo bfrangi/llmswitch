@@ -21,7 +21,8 @@ Ollama, and most current local servers) are plain pass-throughs: the request goe
 unchanged except for the model name, and the response streams back byte for byte.
 Upstreams that only speak OpenAI chat completions get translated both ways.
 
-Nothing in the code names a host, a port, or a model. The configuration file does.
+Which servers exist, where they are, and how to reach them is all defined in one
+configuration file.
 
 ## Install
 
