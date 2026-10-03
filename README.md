@@ -1,8 +1,8 @@
 # llmswitch
 
-One local endpoint in front of every LLM server you use, so Claude Code can run on
-Anthropic's models, on an Ollama on this machine, on an Ollama on another machine,
-or on any OpenAI-compatible server, and switch between them by model name.
+One local endpoint in front of every LLM server you use. Claude Code can then work
+with Anthropic's models, a local Ollama, a remote Ollama, or any OpenAI-compatible
+server, and switch between them by model name.
 
 ```
                    ┌──────────────────────── llmswitch gateway (127.0.0.1:11436) ──────────────────┐
