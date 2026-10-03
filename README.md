@@ -37,6 +37,10 @@ llmswitch                         # starts what is needed, shows the model picke
 `llmswitch init` pre-fills a `local` provider if an Ollama answers on this machine, and
 leaves commented examples for a tunnelled remote machine and an OpenAI-style server.
 
+[config.example.yaml](config.example.yaml) is a complete real configuration (this repository's
+author's: a local Ollama, a remote one through an SSH tunnel, and Anthropic), kept identical
+to the live file on the author's machine.
+
 ## Daily use
 
 ```bash
