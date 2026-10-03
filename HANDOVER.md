@@ -28,8 +28,10 @@ lists all live in `~/.config/llmswitch/config.yaml`; the code names none of them
   so it cannot show Ollama models to a subscription user. The launcher picker and
   `/model <name>` cover that.
 - **Per-provider `launch.env` with `{model}` placeholders** replaces hardcoding Claude
-  Code variable names. The template seeds the ones Ollama's own `ollama launch claude`
-  sets (attribution header off, token reminder off, background models pinned).
+  Code variable names. The template seeds a subset of what Ollama's own `ollama launch claude`
+  sets (token reminder off, background and subagent models pinned, context window). It
+  deliberately does not pin the Sonnet/Opus slots or turn the attribution header off:
+  auto mode's classifier resolves through those slots and must reach Anthropic as itself.
 
 ## Verified against
 

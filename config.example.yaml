@@ -32,13 +32,14 @@ providers:
     models: ollama                      # list models with Ollama's /api/tags
     launch:                             # applied when a model from this provider is chosen
       env:
-        CLAUDE_CODE_ATTRIBUTION_HEADER: "0"       # keep Claude Code's attribution block out of the prompt cache
         CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"  # that reminder breaks Ollama's KV cache on every turn
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"  # background tasks and subagents stay on this model too
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "{model}"
-        ANTHROPIC_DEFAULT_OPUS_MODEL: "{model}"
-        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
+        CLAUDE_CODE_AUTO_MODE_SERVER: "0"         # a local server cannot review actions; use Claude Code's own classifier
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"  # background tasks (titles, summaries) stay on this model
+        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"     # subagents too
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"  # the model's window, so compaction is timed right
+        # Do not pin ANTHROPIC_DEFAULT_SONNET_MODEL / _OPUS_MODEL or turn CLAUDE_CODE_ATTRIBUTION_HEADER off:
+        # auto mode's safety classifier resolves through those slots, must run on a Claude model, and goes to
+        # Anthropic through the gateway with that header as its identification.
 
 #  workstation:                        # an Ollama on another machine, through the tunnel above
 #    protocol: anthropic
@@ -47,11 +48,9 @@ providers:
 #    models: ollama
 #    launch:
 #      env:
-#        CLAUDE_CODE_ATTRIBUTION_HEADER: "0"
 #        CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"
+#        CLAUDE_CODE_AUTO_MODE_SERVER: "0"
 #        ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}"
-#        ANTHROPIC_DEFAULT_SONNET_MODEL: "{model}"
-#        ANTHROPIC_DEFAULT_OPUS_MODEL: "{model}"
 #        CLAUDE_CODE_SUBAGENT_MODEL: "{model}"
 #        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
@@ -65,3 +64,4 @@ claude:
   command: claude
   default_model: null                   # null: Claude Code's own default when you just press Enter
   env: {}                               # extra environment for every launch; {model} placeholders work here too
+  model_picker: true                    # list every routable model in Claude Code's /model picker (via --settings)

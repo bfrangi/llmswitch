@@ -49,9 +49,12 @@ llmswitch status                             # gateway, tunnels, providers
 llmswitch down                               # stop the gateway and the tunnels
 ```
 
-Inside Claude Code, `/model workstation/qwen3-coder:30b` switches models at any time; the
-name just has to be one the gateway routes. Pressing Enter in the picker launches Claude
-Code with its own default model, which goes to Anthropic through the gateway.
+Inside Claude Code, `/model` lists every routable model below the built-in Claude rows,
+because the launcher hands Claude Code the lineup through its `--settings` flag; typing
+`/model workstation/qwen3-coder:30b` works too. Pressing Enter in the launcher picker starts
+Claude Code with its own default model, which goes to Anthropic through the gateway.
+Switching models mid-session keeps the launch environment of the model you started
+with (background-task pin, context window), so start a new session when that matters.
 
 The gateway and the tunnels stay up after Claude Code exits and are reused by the
 next launch, so several sessions can share them. `llmswitch restart` reloads the config.
@@ -124,6 +127,7 @@ claude:
   args: []                               # always passed to Claude Code
   env: {}                                # for every launch; placeholders work here too
   default_model: null                    # what Enter in the picker means; null = Claude Code decides
+  model_picker: true                     # add every routable model to Claude Code's /model picker
 ```
 
 ### Credentials
@@ -161,14 +165,23 @@ Token counting is not available, so Claude Code estimates context usage itself.
   its full feature set. Ollama ignores what it does not support; an upstream that
   rejects unknown fields gets the `compat` block above, or set
   `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` in that provider's `launch.env`.
-- Claude Code's own gateway model discovery (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`)
-  works against `/v1/models` but only lists ids containing `claude` or `anthropic`, and
-  only when a credential variable is set. The `llmswitch` picker has no such limits.
+- `/model` shows the gateway's models because `llmswitch` passes a `modelPicker` lineup
+  with `--settings` at launch. Claude Code uses one lineup source at a time, so if you
+  keep your own `modelPicker` in `~/.claude/settings.json`, set `claude.model_picker:
+  false` or pass your own `--settings`. Claude Code's built-in gateway discovery
+  (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`) is not a substitute: it needs a
+  credential variable rather than a login, and only keeps ids containing `claude`.
 - Claude Code does not know names like `workstation/qwen3-coder:30b`, so it assumes a 200k
   context window and says so once at startup. The template's `launch.env` sets
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` from the model's reported window, and pins the
-  background and subagent model slots to the chosen model so no hidden request goes
-  to Anthropic while you work on a local model.
+  background-task and subagent slots to the chosen model.
+- Auto mode's safety classifier is the exception: it must run on a Claude model, so
+  it goes to Anthropic through the gateway even while you work on a local model. The
+  template therefore leaves the Sonnet and Opus slots unpinned, keeps the attribution
+  header on (it identifies classifier requests), and sets
+  `CLAUDE_CODE_AUTO_MODE_SERVER=0` so Claude Code does not first wait for a review
+  verdict a local server will never produce. If you would rather send nothing to
+  Anthropic, launch with `--permission-mode acceptEdits` and approve actions yourself.
 - Local models need a large context window: Claude Code's system prompt alone is
   tens of thousands of tokens. Ollama sizes the window from the server's memory
   (4k below 24 GiB) unless `OLLAMA_CONTEXT_LENGTH` is set on the server, for example
@@ -203,6 +216,7 @@ Gateway endpoints: `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /
 | Local model answers are cut short or forgetful | raise the server's context length (see above) |
 | `400 ... Extra inputs are not permitted` from a non-Anthropic upstream | add a `compat.drop_fields` entry naming the field |
 | Nothing happens, then a timeout | `llmswitch logs -n 50` shows the upstream the request went to |
+| `... is temporarily unavailable, so auto mode cannot determine the safety of ...` | the classifier was routed to a local model and queued behind your turn; keep `ANTHROPIC_DEFAULT_SONNET_MODEL`/`_OPUS_MODEL` unpinned so it reaches Anthropic, as the template does |
 
 ## Extending
 
