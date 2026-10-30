@@ -98,6 +98,7 @@ tunnels:
   workstation:
     ssh: workstation                          # anything `ssh` accepts
     forward: 11435:localhost:11434       # `ssh -L` syntax; a list is fine
+    # timeout: 5                         # connect timeout in seconds (default: 5)
     # options: ["-J", "bastion"]         # extra ssh arguments
 
 providers:                               # a mapping (or a list with `name:` keys); order is picker order
@@ -156,9 +157,13 @@ Binding to `0.0.0.0` hands that access to the whole network.
 
 A tunnel is the zero-setup option: it needs only `ssh` access, and the gateway manages it
 as an SSH control-master session (`llmswitch status` sees it, `llmswitch down` closes it,
-`--force` replaces a stale one). If both machines are already on a private network such
-as Tailscale, you can skip the tunnel: make the remote server listen on that network
-(`OLLAMA_HOST=<tailnet-ip>` for Ollama) and point `base_url` at it directly.
+`--force` replaces a stale one). Tunnels use a configurable `timeout` (default 5s) via SSH
+`ConnectTimeout`; if a remote machine is offline, the launcher warns and continues startup
+without hanging.
+
+If both machines are already on a private network such as Tailscale, you can skip the tunnel:
+make the remote server listen on that network (`OLLAMA_HOST=<tailnet-ip>` for Ollama) and point
+`base_url` at it directly.
 
 ### OpenAI-only servers
 

@@ -108,3 +108,76 @@ def test_model_picker_switch_parses(tmp_path: Path) -> None:
     path = tmp_path / "c.yaml"
     path.write_text("providers:\n  a: {protocol: anthropic, base_url: http://a.test}\nclaude: {model_picker: false}\n")
     assert load_config(path).claude.model_picker is False
+
+
+def test_tunnel_manager_connect_timeout(config, monkeypatch) -> None:
+    import subprocess
+
+    from llmswitch.tunnels import TunnelManager
+
+    tm = TunnelManager(config)
+    spec = config.tunnels["box"]
+    recorded_cmd: list[str] = []
+
+    def fake_run(cmd, **kwargs):
+        recorded_cmd.extend(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(tm, "_free_ports", lambda s, f: None)
+    monkeypatch.setattr(tm, "is_up", lambda s: len(recorded_cmd) > 0)
+
+    tm.up(spec)
+    assert "ConnectTimeout=5" in recorded_cmd
+    idx = recorded_cmd.index("ConnectTimeout=5")
+    assert recorded_cmd[idx - 1] == "-o"
+
+
+def test_tunnel_manager_timeout_expired(config, monkeypatch) -> None:
+    import subprocess
+
+    from llmswitch.tunnels import TunnelError, TunnelManager
+
+    tm = TunnelManager(config)
+    spec = config.tunnels["box"]
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=5.0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(tm, "is_up", lambda s: False)
+    monkeypatch.setattr(tm, "_free_ports", lambda s, f: None)
+
+    with pytest.raises(TunnelError, match="timed out connecting"):
+        tm.up(spec)
+
+
+def test_tunnel_manager_control_timeout(config, monkeypatch) -> None:
+    import subprocess
+
+    from llmswitch.tunnels import TunnelManager
+
+    tm = TunnelManager(config)
+    spec = config.tunnels["box"]
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=5.0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    proc = tm._control(spec, "check")
+    assert proc.returncode == 255
+    assert not tm.is_up(spec)
+
+
+def test_ensure_up_continues_on_offline_tunnel(config, monkeypatch, capsys) -> None:
+    from llmswitch.tunnels import TunnelError
+
+    def fake_up(self, spec, force=False):
+        raise TunnelError("ssh exited with status 255 (host unreachable)")
+
+    monkeypatch.setattr("llmswitch.tunnels.TunnelManager.up", fake_up)
+    monkeypatch.setattr("llmswitch.daemon.GatewayManager.up", lambda self, force=False: "started")
+
+    cli.ensure_up(config)
+    err = capsys.readouterr().err
+    assert "continuing without tunnel 'box'" in err

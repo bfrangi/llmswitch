@@ -118,6 +118,17 @@ def test_resolve_config_path(monkeypatch, tmp_path: Path) -> None:
 def test_tunnel_local_ports() -> None:
     t = TunnelSpec("t", "host", ["127.0.0.1:2222:localhost:22", "3333:db:5432"])
     assert t.local_ports() == [2222, 3333]
+    assert t.timeout == 5.0
+
+
+def test_tunnel_timeout_parsing() -> None:
+    cfg = parse("""
+tunnels:
+  box: {ssh: box, forward: "11435:localhost:11434", timeout: 2.5}
+providers:
+  a: {protocol: anthropic, base_url: http://a.test, tunnel: box}
+""")
+    assert cfg.tunnels["box"].timeout == 2.5
 
 
 @pytest.mark.parametrize("local", ["http://127.0.0.1:11434", None])

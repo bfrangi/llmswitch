@@ -37,9 +37,20 @@ class TunnelManager:
         return self.dir / f"{name}.sock"
 
     def _control(self, spec: TunnelSpec, op: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["ssh", "-S", str(self.socket_path(spec.name)), "-O", op, spec.ssh], capture_output=True, text=True
-        )
+        try:
+            return subprocess.run(
+                ["ssh", "-S", str(self.socket_path(spec.name)), "-O", op, spec.ssh],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(
+                args=["ssh", "-S", str(self.socket_path(spec.name)), "-O", op, spec.ssh],
+                returncode=255,
+                stdout="",
+                stderr="ssh control operation timed out",
+            )
 
     def is_up(self, spec: TunnelSpec) -> bool:
         return self.socket_path(spec.name).exists() and self._control(spec, "check").returncode == 0
@@ -68,13 +79,21 @@ class TunnelManager:
             "ServerAliveInterval=30",
             "-o",
             "ServerAliveCountMax=3",
-            *spec.options,
         ]
+        if not any("ConnectTimeout" in opt for opt in spec.options):
+            timeout_sec = max(1, int(spec.timeout))
+            cmd.extend(["-o", f"ConnectTimeout={timeout_sec}"])
+        cmd.extend(spec.options)
         for fwd in spec.forwards:
             cmd += ["-L", fwd]
         cmd.append(spec.ssh)
         try:
-            proc = subprocess.run(cmd)  # inherits the terminal: ssh may ask for a passphrase
+            subproc_timeout = max(float(spec.timeout) + 10.0, 15.0)
+            proc = subprocess.run(cmd, timeout=subproc_timeout)  # inherits the terminal: ssh may ask for a passphrase
+        except subprocess.TimeoutExpired as e:
+            raise TunnelError(
+                f"tunnel '{spec.name}': timed out connecting to {spec.ssh} after {spec.timeout:g}s"
+            ) from e
         except FileNotFoundError as e:
             raise TunnelError("ssh is not installed or not on PATH") from e
         if proc.returncode != 0:

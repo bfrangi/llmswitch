@@ -106,6 +106,7 @@ class TunnelSpec:
     ssh: str
     forwards: list[str]
     options: list[str] = field(default_factory=list)
+    timeout: float = 5.0
 
     def local_ports(self) -> list[int]:
         """Local ports from ``[bind:]port:host:hostport`` forward specs."""
@@ -303,7 +304,7 @@ def _parse_tunnels(raw: Any) -> dict[str, TunnelSpec]:
     for name, body in _mapping(raw, "tunnels").items():
         where = f"tunnels.{name}"
         m = _mapping(body, where)
-        _only_keys(m, ("ssh", "forward", "forwards", "options"), where)
+        _only_keys(m, ("ssh", "forward", "forwards", "options", "timeout"), where)
         forwards = _str_list(m.get("forward"), f"{where}.forward") + _str_list(m.get("forwards"), f"{where}.forwards")
         if not forwards:
             raise ConfigError(f"{where}: needs at least one forward (e.g. 11435:localhost:11434)")
@@ -312,6 +313,7 @@ def _parse_tunnels(raw: Any) -> dict[str, TunnelSpec]:
             ssh=_req_str(m.get("ssh"), f"{where}.ssh"),
             forwards=forwards,
             options=_str_list(m.get("options"), f"{where}.options"),
+            timeout=_float(m.get("timeout"), f"{where}.timeout", 5.0),
         )
     return out
 
