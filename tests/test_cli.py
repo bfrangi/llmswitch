@@ -181,3 +181,10 @@ def test_ensure_up_continues_on_offline_tunnel(config, monkeypatch, capsys) -> N
     cli.ensure_up(config)
     err = capsys.readouterr().err
     assert "continuing without tunnel 'box'" in err
+
+
+def test_detect_local_antigravity(monkeypatch) -> None:
+    monkeypatch.setattr("llmswitch.cli.port_open", lambda h, p: p == 8080)
+    assert cli._detect_local_antigravity() == "http://127.0.0.1:8080"
+    monkeypatch.setattr("llmswitch.cli.port_open", lambda h, p: False)
+    assert cli._detect_local_antigravity() is None

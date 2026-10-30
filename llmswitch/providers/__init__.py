@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from ..config import ProviderSpec
 
 REGISTRY: dict[str, type[Provider]] = {cls.protocol: cls for cls in (AnthropicProvider, OpenAIProvider)}
+REGISTRY["antigravity"] = AnthropicProvider
 
 
 def _load_plugins() -> None:

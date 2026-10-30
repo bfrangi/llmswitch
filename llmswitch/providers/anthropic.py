@@ -33,9 +33,10 @@ class AnthropicProvider(Provider):
         resp = await self._forward(inc, "/v1/messages/count_tokens", upstream_model, raw=True)
         if isinstance(resp, JSONResponse):
             return resp
-        # Upstreams without a counting endpoint (Ollama answers a plain-text 404) get a
-        # proper API error so the client falls back to its own estimate.
-        if resp.status_code in (404, 405) and "json" not in resp.headers.get("content-type", ""):
+        # Upstreams without a counting endpoint (Ollama answers a plain-text 404,
+        # Antigravity answers 501 Not Implemented) get a proper API error so the client
+        # falls back to its own estimate.
+        if resp.status_code in (404, 405, 501):
             await resp.aclose()
             return anthropic_error(404, f"llmswitch: provider '{self.name}' has no token counting endpoint")
         return passthrough_response(resp)

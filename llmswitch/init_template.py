@@ -47,6 +47,14 @@ LOCAL_BLOCK = """
         # (Opus, Sonnet, Haiku) would otherwise silently point at this model and swallow its own row.
 """
 
+ANTIGRAVITY_BLOCK = """
+  google:
+    protocol: anthropic                 # Google models (via antigravity-claude-proxy)
+    base_url: {base_url}
+    models: anthropic                   # list models with /v1/models
+    match: ["gemini-*"]                 # bare gemini-* names route here without a prefix
+"""
+
 FOOTER = """
 #  workstation:                        # an Ollama on another machine, through the tunnel above
 #    protocol: anthropic
@@ -73,7 +81,7 @@ claude:
 """
 
 
-def render_template(local_ollama: str | None) -> str:
+def render_template(local_ollama: str | None, local_antigravity: str | None = None) -> str:
     local = (
         LOCAL_BLOCK.format(base_url=local_ollama)
         if local_ollama
@@ -83,4 +91,13 @@ def render_template(local_ollama: str | None) -> str:
         )
         + "\n"
     )
-    return HEADER + local + FOOTER
+    ag = (
+        ANTIGRAVITY_BLOCK.format(base_url=local_antigravity)
+        if local_antigravity
+        else "\n".join(
+            ("#" + line if line.strip() else line)
+            for line in ANTIGRAVITY_BLOCK.format(base_url="http://127.0.0.1:8080").splitlines()
+        )
+        + "\n"
+    )
+    return HEADER + local + ag + FOOTER

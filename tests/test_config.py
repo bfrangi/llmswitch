@@ -131,8 +131,22 @@ providers:
     assert cfg.tunnels["box"].timeout == 2.5
 
 
+def test_antigravity_protocol_and_models() -> None:
+    cfg = parse("""
+providers:
+  ag:
+    protocol: antigravity
+    base_url: http://127.0.0.1:8080/v1
+    models: antigravity
+""")
+    assert cfg.providers[0].protocol == "antigravity"
+    assert cfg.providers[0].models.source == "antigravity"
+
+
 @pytest.mark.parametrize("local", ["http://127.0.0.1:11434", None])
-def test_template_is_valid(local: str | None) -> None:
-    cfg = parse(render_template(local))
+@pytest.mark.parametrize("ag", ["http://127.0.0.1:8080", None])
+def test_template_is_valid(local: str | None, ag: str | None) -> None:
+    cfg = parse(render_template(local, ag))
     assert cfg.provider("anthropic").auth.mode == "passthrough"
     assert (cfg.provider("local") is not None) is bool(local)
+    assert (cfg.provider("google") is not None) is bool(ag)

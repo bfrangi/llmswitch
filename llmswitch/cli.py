@@ -180,6 +180,14 @@ def _detect_local_ollama() -> str | None:
     return f"http://{h}:{p}" if port_open(h, int(p)) else None
 
 
+def _detect_local_antigravity() -> str | None:
+    """Pre-fill the template with Antigravity if one answers at its usual address."""
+    for port in (8080, 3000):
+        if port_open("127.0.0.1", port):
+            return f"http://127.0.0.1:{port}"
+    return None
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     path = resolve_config_path(args.config)
     if path.exists() and not args.force:
@@ -187,9 +195,11 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 1
     path.parent.mkdir(parents=True, exist_ok=True)
     local = _detect_local_ollama()
-    path.write_text(render_template(local))
+    antigravity = _detect_local_antigravity()
+    path.write_text(render_template(local, antigravity))
     print(f"wrote {path}")
     print(f"local Ollama: {'found at ' + local if local else 'not detected (left commented out)'}")
+    print(f"Antigravity:  {'found at ' + antigravity if antigravity else 'not detected (left commented out)'}")
     print("edit it, then run `llmswitch`")
     return 0
 

@@ -18,8 +18,8 @@ import yaml
 APP_NAME = "llmswitch"
 CONFIG_ENV_VAR = "LLMSWITCH_CONFIG"
 
-PROTOCOLS = ("anthropic", "openai")
-MODEL_SOURCES = ("ollama", "openai", "anthropic", "none")
+PROTOCOLS = ("anthropic", "openai", "antigravity")
+MODEL_SOURCES = ("ollama", "openai", "anthropic", "antigravity", "none")
 AUTH_MODES = ("passthrough", "key", "none")
 AUTH_HEADERS = ("x-api-key", "authorization")
 

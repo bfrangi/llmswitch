@@ -6,11 +6,11 @@ import fnmatch
 import logging
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from ..catalog import ModelEntry
 
 if TYPE_CHECKING:
-    import httpx
-
     from ..config import ProviderSpec
 
 log = logging.getLogger("llmswitch.discovery")
@@ -57,7 +57,11 @@ async def discover_ollama(spec: ProviderSpec, http: httpx.AsyncClient) -> list[M
 
 
 async def discover_openai(spec: ProviderSpec, http: httpx.AsyncClient, auth: dict[str, str]) -> list[ModelEntry]:
-    r = await http.get(f"{spec.base_url}/models", headers=auth, timeout=10)
+    base = spec.base_url.rstrip("/")
+    url = f"{base}/models"
+    r = await http.get(url, headers=auth, timeout=10)
+    if r.status_code == 404 and not base.endswith("/v1"):
+        r = await http.get(f"{base}/v1/models", headers=auth, timeout=10)
     r.raise_for_status()
     out = []
     for m in r.json().get("data") or []:
@@ -78,23 +82,41 @@ async def discover_openai(spec: ProviderSpec, http: httpx.AsyncClient, auth: dic
 
 
 async def discover_anthropic(spec: ProviderSpec, http: httpx.AsyncClient, auth: dict[str, str]) -> list[ModelEntry]:
-    if not auth:
+    if not auth and "api.anthropic.com" in spec.base_url:
         log.info("provider %s: model listing needs auth mode 'key'; showing static entries only", spec.name)
         return []
+    base = spec.base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
     headers = {"anthropic-version": "2023-06-01", **auth}
-    r = await http.get(f"{spec.base_url}/v1/models", params={"limit": 1000}, headers=headers, timeout=10)
-    r.raise_for_status()
+    try:
+        r = await http.get(f"{base}/v1/models", params={"limit": 1000}, headers=headers, timeout=10)
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (401, 403, 404, 501):
+            log.info(
+                "provider %s: model listing unavailable (%s); showing static entries only",
+                spec.name,
+                e.response.status_code,
+            )
+            return []
+        raise
+    except httpx.RequestError as e:
+        log.info("provider %s: model listing failed (%s); showing static entries only", spec.name, e)
+        return []
     out = []
     for m in r.json().get("data") or []:
         mid = m.get("id")
         if not mid:
             continue
+        display_name = m.get("display_name") or m.get("description") or mid
+        description = m.get("description") or m.get("owned_by") or ""
         out.append(
             ModelEntry(
                 provider=spec.name,
                 upstream_id=mid,
-                display_name=m.get("display_name") or mid,
-                description=m.get("description") or "",
+                display_name=display_name,
+                description=description,
                 details={"created_at": m.get("created_at")},
             )
         )
@@ -122,7 +144,7 @@ async def discover_models(
         found = await discover_ollama(spec, http)
     elif source == "openai":
         found = await discover_openai(spec, http, auth)
-    elif source == "anthropic":
+    elif source in ("anthropic", "antigravity"):
         found = await discover_anthropic(spec, http, auth)
     else:
         found = []

@@ -121,7 +121,10 @@ class Provider(ABC):
         ]
 
     def url(self, path: str, query: str = "") -> str:
-        return f"{self.spec.base_url}{path}" + (f"?{query}" if query else "")
+        base = self.spec.base_url.rstrip("/")
+        if path.startswith("/v1") and base.endswith("/v1"):
+            base = base[:-3]
+        return f"{base}{path}" + (f"?{query}" if query else "")
 
     def auth_headers(self, default_header: str) -> dict[str, str]:
         """Credentials the provider itself holds (none in passthrough mode)."""

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastapi import Request, Response
 
 from tests.conftest import ANTHROPIC_SSE
 
@@ -175,3 +176,89 @@ async def test_errors_and_probes(client) -> None:
     assert r.status_code == 404 and "nowhere/x" in r.json()["error"]["message"]
     r = await client.get("/v1/complete")
     assert r.status_code == 404 and r.json()["type"] == "error"
+
+
+async def test_antigravity_discovery_and_count_tokens(recorder) -> None:
+    from pathlib import Path
+
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    from llmswitch.config import parse_config
+    from llmswitch.gateway import create_app
+
+    ag_app = FastAPI()
+
+    @ag_app.get("/v1/models")
+    async def get_models(request: Request) -> Response:
+        return JSONResponse(
+            {
+                "object": "list",
+                "data": [
+                    {
+                        "id": "gemini-3.8-flash-high",
+                        "object": "model",
+                        "description": "Gemini 3.8 Flash (High)",
+                    }
+                ],
+            }
+        )
+
+    @ag_app.post("/v1/messages/count_tokens")
+    async def count_tokens(request: Request) -> Response:
+        return JSONResponse({"type": "error", "error": {"type": "not_implemented"}}, status_code=501)
+
+    @ag_app.post("/v1/messages")
+    async def messages(request: Request) -> Response:
+        return JSONResponse(
+            {"id": "msg_ag", "model": "gemini-3.8-flash-high", "content": [{"type": "text", "text": "ag hello"}]}
+        )
+
+    cfg = parse_config(
+        {
+            "gateway": {"port": 11436},
+            "providers": {
+                "antigravity": {
+                    "protocol": "antigravity",
+                    "base_url": "http://ag.test/v1",
+                    "models": "antigravity",
+                    "match": ["gemini-*"],
+                }
+            },
+        },
+        Path("/tmp/test_ag.yaml"),
+    )
+
+    upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=ag_app))
+    app = create_app(cfg, http=upstream)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://client") as client,
+    ):
+        # 1. Models discovered even with /v1 in base_url and no auth
+        r = await client.get("/llmswitch/models")
+        assert r.status_code == 200
+        models = r.json()["models"]
+        assert len(models) == 1
+        assert models[0]["launch_id"] == "gemini-3.8-flash-high"
+        assert models[0]["display_name"] == "Gemini 3.8 Flash (High)"
+
+        # 2. Token counting converts 501 into 404 for Claude Code compatibility
+        r = await client.post(
+            "/v1/messages/count_tokens",
+            json={"model": "gemini-3.8-flash-high", "messages": [{"role": "user", "content": "hi"}]},
+            headers=CLIENT_HEADERS,
+        )
+        assert r.status_code == 404
+        assert r.json()["error"]["type"] == "not_found_error"
+
+        # 3. Message routing to antigravity succeeds with URL normalized
+        r = await client.post(
+            "/v1/messages",
+            json={"model": "gemini-3.8-flash-high", "messages": [{"role": "user", "content": "hi"}]},
+            headers=CLIENT_HEADERS,
+        )
+        assert r.status_code == 200
+        assert r.json()["content"][0]["text"] == "ag hello"
+    await upstream.aclose()

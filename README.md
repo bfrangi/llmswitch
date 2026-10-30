@@ -118,6 +118,11 @@ providers:                               # a mapping (or a list with `name:` key
     #   drop_headers: [anthropic-beta]
     #   rename_fields: {max_tokens: max_completion_tokens}
     #   set_fields: {reasoning_effort: high}
+  google:                                # Google models (Gemini / Antigravity via antigravity-claude-proxy)
+    protocol: anthropic
+    base_url: http://127.0.0.1:8080
+    models: anthropic                    # discovers models via /v1/models
+    match: ["gemini-*"]                  # bare gemini-* names route here without a prefix
   workstation:
     protocol: anthropic
     base_url: http://127.0.0.1:11435
@@ -164,6 +169,15 @@ without hanging.
 If both machines are already on a private network such as Tailscale, you can skip the tunnel:
 make the remote server listen on that network (`OLLAMA_HOST=<tailnet-ip>` for Ollama) and point
 `base_url` at it directly.
+
+### Google models (Gemini / Antigravity)
+
+Google models (e.g. Gemini 3.8 Flash, Gemini 4 Argon, Claude Opus/Sonnet 5.5) can be bridged
+using [antigravity-claude-proxy](https://github.com/badrisnarayanan/antigravity-claude-proxy)
+(typically running on `http://127.0.0.1:8080`). Set `protocol: anthropic`, `base_url: http://127.0.0.1:8080`,
+and `models: anthropic` (or `antigravity`). Bare `gemini-*` models can be routed automatically via
+`match: ["gemini-*"]`. If token counting is not implemented upstream (501), llmswitch converts it
+to 404 so Claude Code falls back to estimating tokens locally.
 
 ### OpenAI-only servers
 
