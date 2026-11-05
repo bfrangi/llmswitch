@@ -1,8 +1,8 @@
 # llmswitch
 
 One local endpoint in front of every LLM server you use. Claude Code can then work
-with Anthropic's models, a local Ollama, a remote Ollama, or any OpenAI-compatible
-server, and switch between them by model name.
+with Anthropic's models, a local Ollama, a remote Ollama, Google's Gemini API, or any
+OpenAI-compatible server, and switch between them by model name.
 
 ```
                    ┌──────────────────────── llmswitch gateway (127.0.0.1:11436) ──────────────────┐
@@ -13,13 +13,15 @@ server, and switch between them by model name.
                    │   local/…        ─────► http://127.0.0.1:11434    (Ollama on this machine)     │
                    │   workstation/…  ─────► http://127.0.0.1:11435 ──ssh tunnel──► another machine │
                    │   other/…        ─────► https://host/v1           (OpenAI-style, translated)   │
+                   │   gemini-key/…   ─────► Gemini API                (Google's API, translated)   │
                    └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The gateway speaks the Anthropic Messages API. Upstreams that speak it too (Anthropic,
 Ollama, and most current local servers) are plain pass-throughs: the request goes out
 unchanged except for the model name, and the response streams back byte for byte.
-Upstreams that only speak OpenAI chat completions get translated both ways.
+Google's Gemini API and upstreams that only speak OpenAI chat completions get translated
+both ways.
 
 Which servers exist, where they are, and how to reach them is all defined in one
 configuration file.
@@ -103,11 +105,11 @@ tunnels:
 
 providers:                               # a mapping (or a list with `name:` keys); order is picker order
   anthropic:
-    protocol: anthropic                  # anthropic | openai
+    protocol: anthropic                  # anthropic | openai | gemini
     base_url: https://api.anthropic.com  # for `openai`, include the /v1 the server expects
     auth: passthrough                    # passthrough | none (default) | api_key: ...  | {mode: key, key: ..., header: ...}
     match: ["claude-*"]                  # bare names routed here
-    models:                              # ollama | openai | anthropic | none | a list | {source, static, include, exclude}
+    models:                              # ollama | openai | anthropic | gemini | none | a list | {source, static, include, exclude}
       - {id: default, bare: true, description: "Claude Code's own choice"}
       - {id: opus, bare: true}
     # default: true                      # catch-all for unknown bare names
@@ -149,7 +151,9 @@ claude:
   received. Use it for Anthropic so a Claude subscription login keeps working; the
   `anthropic-beta` header it depends on is forwarded as well.
 - `api_key: ...` strips the client's credentials and sends the provider's own key,
-  as `x-api-key` for `anthropic`, `Authorization: Bearer` for `openai`.
+  as `x-api-key` for `anthropic`, `Authorization: Bearer` for `openai`, and
+  `x-goog-api-key` for `gemini`. `auth: {mode: key, key: ..., header: ...}` picks the
+  header instead (`x-api-key`, `authorization`, or `x-goog-api-key`).
 - The default, `none`, strips the client's credentials. Your Anthropic token never
   reaches a server you did not mark `passthrough`.
 
@@ -172,12 +176,39 @@ make the remote server listen on that network (`OLLAMA_HOST=<tailnet-ip>` for Ol
 
 ### Google models (Gemini / Antigravity)
 
-Google models (e.g. Gemini 3.8 Flash, Gemini 4 Argon, Claude Opus/Sonnet 5.5) can be bridged
-using [antigravity-claude-proxy](https://github.com/badrisnarayanan/antigravity-claude-proxy)
-(typically running on `http://127.0.0.1:8080`). Set `protocol: anthropic`, `base_url: http://127.0.0.1:8080`,
-and `models: anthropic` (or `antigravity`). Bare `gemini-*` models can be routed automatically via
+There are two routes to Google's models, and both can be configured at once.
+
+**A Google subscription**, through
+[antigravity-claude-proxy](https://github.com/badrisnarayanan/antigravity-claude-proxy)
+(typically running on `http://127.0.0.1:8080`), which also serves Claude Opus/Sonnet 5.5 on
+Antigravity. Set `protocol: anthropic`, `base_url: http://127.0.0.1:8080`, and
+`models: anthropic` (or `antigravity`). Bare `gemini-*` models can be routed automatically via
 `match: ["gemini-*"]`. If token counting is not implemented upstream (501), llmswitch converts it
 to 404 so Claude Code falls back to estimating tokens locally.
+
+**A Gemini API key**, straight to Google. `protocol: gemini` translates to Gemini's own
+`generateContent` API rather than its OpenAI-compatible one, which cannot carry what Claude Code
+needs:
+
+```yaml
+  gemini-key:
+    protocol: gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    api_key: AIza...                     # sent as x-goog-api-key
+    models:
+      source: gemini                     # GET /models, keeping the models that can generate text
+      include: ["gemini-4-*", "gemini-3.8-flash"]
+```
+
+Models are then addressed as `gemini-key/gemini-4-argon` and so on. Claude Code's effort setting
+picks Gemini's thinking level (`low`, `medium`, `high`; `xhigh` and `max` map to `high`), and
+Gemini's thought summaries arrive as thinking blocks when Claude Code asks to see thinking. Tool
+calls keep their thought signatures from one step to the next, which Gemini requires. Images
+and PDFs go as inline data, and token counting uses Gemini's `countTokens`. Models whose listing
+says they do not think get no thinking configuration, since Gemini rejects it for them. Anthropic
+server tools (such as web search) and cache markers have no Gemini equivalent and are left out;
+Gemini caches repeated prompt prefixes by itself and reports those reads as
+`cache_read_input_tokens`.
 
 ### OpenAI-only servers
 
@@ -272,6 +303,7 @@ uv run llmswitch gateway --config config.example.yaml --port 11499   # foregroun
 Design notes live in [docs/DESIGN.md](docs/DESIGN.md). CI runs ruff and pytest on Python 3.10 to 3.13.
 
 Layout: `llmswitch/config.py` (schema and loader), `llmswitch/catalog.py` (discovery and routing),
-`llmswitch/providers/` (`anthropic` pass-through, `openai` translation, discovery sources),
+`llmswitch/providers/` (`anthropic` pass-through, `openai` and `gemini` translation, `events`
+for the response blocks both translators build, discovery sources),
 `llmswitch/gateway.py` (FastAPI app), `llmswitch/tunnels.py` and `llmswitch/daemon.py` (process
 management), `llmswitch/picker.py`, `llmswitch/cli.py` (both entry points).

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from ..config import ConfigError
 from .anthropic import AnthropicProvider
 from .base import Incoming, Provider, anthropic_error
+from .gemini import GeminiProvider
 from .openai import OpenAIProvider
 
 if TYPE_CHECKING:
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
     from ..config import ProviderSpec
 
-REGISTRY: dict[str, type[Provider]] = {cls.protocol: cls for cls in (AnthropicProvider, OpenAIProvider)}
+REGISTRY: dict[str, type[Provider]] = {cls.protocol: cls for cls in (AnthropicProvider, OpenAIProvider, GeminiProvider)}
 REGISTRY["antigravity"] = AnthropicProvider
 
 

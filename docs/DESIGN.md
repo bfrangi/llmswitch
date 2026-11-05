@@ -16,6 +16,25 @@ lists all live in the configuration file; the code names none of them.
   headers, streaming pings, usage headers, and error wording, all of which Claude Code
   relies on (see Claude Code's gateway compatibility guide). The `openai` provider is a
   translation layer for servers that have nothing better.
+- **Translate to a vendor's own API when the OpenAI shape loses something that matters.**
+  Gemini's OpenAI-compatible endpoint has no place for thought signatures, and Gemini
+  refuses the second step of any tool call that comes back without one, so the `gemini`
+  provider speaks `generateContent` directly. That also gives thinking levels and exact
+  token counting.
+- **No state in the gateway, even for Gemini's signatures.** A thought signature reaches
+  the client as the `signature` of a thinking block placed just before the part it belongs
+  to, and Anthropic clients send thinking blocks back unchanged. Signatures carry a
+  `llmswitch.gemini:` tag so ones from other vendors (a Claude model earlier in the same
+  conversation) are never forwarded to Google, and a model turn whose first function call
+  still lacks one gets Google's documented placeholder. Anthropic messages never end in
+  thinking, so a signature Gemini sends after the answer is already out is dropped; Gemini
+  only enforces them on function calls, which carry their own.
+- **One block model for every translator.** A translating provider describes its answer as
+  content blocks opened, extended, and closed. `MessageStream` renders that as server-sent
+  events and `MessageBuilder` as a finished message, so streamed and non-streamed answers
+  cannot drift apart. Translated requests also drop the client's content negotiation
+  headers (`accept`, `accept-encoding`): the gateway decodes those responses itself and
+  can only ask for encodings it understands.
 - **Credentials are per provider.** `passthrough` forwards the client's auth headers,
   which is what makes a Claude subscription login work; everything else strips them, so
   a login token never reaches a server that was not marked for it.
@@ -43,6 +62,14 @@ unsupported thinking instead of erroring, has no `count_tokens` (a plain-text 40
 which the gateway turns into an API-shaped 404 so Claude Code falls back to its own
 estimate), and takes its context window from `OLLAMA_CONTEXT_LENGTH` on the server,
 not from the request. Claude Code 2.1.286 for the launcher behaviour.
+
+Gemini API `v1beta` (November 2026) with gemini-3.8-flash and gemini-4-argon, through Claude
+Code 2.1.318: multi-step and parallel tool calls streamed and not, thinking levels and
+summaries, `countTokens`, and implicit prompt caching reported as cache reads. Gemini rejects
+a function call without a signature or with one it did not issue, accepts a signature from
+another Gemini model, needs a `mimeType` to fetch a URL, rejects any thinking configuration
+for models whose listing says they do not think, and accepts `maxOutputTokens` above a
+model's limit.
 
 ## Roadmap
 

@@ -73,6 +73,14 @@ FOOTER = """
 #    api_key: ${SOME_API_KEY}           # ${VAR} and ${VAR:-default} are expanded
 #    models: openai                     # GET /v1/models
 
+#  gemini-key:                          # Google's Gemini API with an API key, spoken natively
+#    protocol: gemini
+#    base_url: https://generativelanguage.googleapis.com/v1beta
+#    api_key: ${GEMINI_API_KEY}         # sent as x-goog-api-key
+#    models:
+#      source: gemini                   # GET /models, keeping the models that can generate text
+#      include: ["gemini-*"]
+
 claude:
   command: claude
   default_model: null                   # null: Claude Code's own default when you just press Enter

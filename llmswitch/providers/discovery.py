@@ -123,6 +123,51 @@ async def discover_anthropic(spec: ProviderSpec, http: httpx.AsyncClient, auth: 
     return out
 
 
+def _gemini_description(m: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if m.get("inputTokenLimit"):
+        parts.append(f"ctx {int(m['inputTokenLimit']) // 1024}k")
+    if m.get("thinking"):
+        parts.append("thinking")
+    return " · ".join(parts)
+
+
+async def discover_gemini(spec: ProviderSpec, http: httpx.AsyncClient, auth: dict[str, str]) -> list[ModelEntry]:
+    """``GET {base}/models``, page by page, keeping the models that can ``generateContent``."""
+    url = f"{spec.base_url.rstrip('/')}/models"
+    out: list[ModelEntry] = []
+    page: str | None = None
+    while True:
+        params: dict[str, Any] = {"pageSize": 1000}
+        if page:
+            params["pageToken"] = page
+        r = await http.get(url, params=params, headers=auth, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        for m in data.get("models") or []:
+            if "generateContent" not in (m.get("supportedGenerationMethods") or []):
+                continue
+            mid = str(m.get("name") or "").removeprefix("models/")
+            if not mid:
+                continue
+            out.append(
+                ModelEntry(
+                    provider=spec.name,
+                    upstream_id=mid,
+                    display_name=m.get("displayName") or mid,
+                    description=_gemini_description(m),
+                    details={
+                        "context_length": m.get("inputTokenLimit"),
+                        "max_output_tokens": m.get("outputTokenLimit"),
+                        "thinking": bool(m.get("thinking")),
+                    },
+                )
+            )
+        page = data.get("nextPageToken")
+        if not page:
+            return out
+
+
 def _filtered(entries: list[ModelEntry], spec: ProviderSpec) -> list[ModelEntry]:
     inc, exc = spec.models.include, spec.models.exclude
     out = []
@@ -146,6 +191,8 @@ async def discover_models(
         found = await discover_openai(spec, http, auth)
     elif source in ("anthropic", "antigravity"):
         found = await discover_anthropic(spec, http, auth)
+    elif source == "gemini":
+        found = await discover_gemini(spec, http, auth)
     else:
         found = []
     seen: set[str] = set()

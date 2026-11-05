@@ -51,7 +51,7 @@ providers:
 #        CLAUDE_CODE_AUTO_MODE_SERVER: "0"
 #        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
-#  google:                             # Google models (Gemini / Antigravity via antigravity-claude-proxy)
+#  google:                             # Google models on a subscription (via antigravity-claude-proxy)
 #    protocol: anthropic
 #    base_url: http://127.0.0.1:8080
 #    models: anthropic                 # GET /v1/models
@@ -62,6 +62,14 @@ providers:
 #    base_url: https://host.example/v1
 #    api_key: ${SOME_API_KEY}           # ${VAR} and ${VAR:-default} are expanded
 #    models: openai                     # GET /v1/models
+
+#  gemini-key:                          # Google's Gemini API with an API key, spoken natively
+#    protocol: gemini
+#    base_url: https://generativelanguage.googleapis.com/v1beta
+#    api_key: ${GEMINI_API_KEY}         # sent as x-goog-api-key
+#    models:
+#      source: gemini                   # GET /models, keeping the models that can generate text
+#      include: ["gemini-*"]
 
 claude:
   command: claude

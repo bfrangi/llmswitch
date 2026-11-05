@@ -52,6 +52,23 @@ providers:
     assert cfg.providers[0].auth.header == "x-api-key"
 
 
+def test_gemini_provider() -> None:
+    cfg = parse("""
+providers:
+  g:
+    protocol: gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    api_key: AIza-k
+    models: {source: gemini, include: ["gemini-*"]}
+  vertex: {protocol: gemini, base_url: https://v.test, auth: {mode: key, key: t, header: Authorization}}
+""")
+    g, vertex = cfg.providers
+    assert g.protocol == "gemini" and g.models.source == "gemini" and g.auth.key == "AIza-k"
+    assert vertex.auth.header == "authorization"
+    with pytest.raises(ConfigError, match="x-goog-api-key"):
+        parse("providers:\n  a: {protocol: gemini, base_url: http://a, auth: {key: k, header: x-goog-key}}")
+
+
 @pytest.mark.parametrize(
     "snippet, needle",
     [

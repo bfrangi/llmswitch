@@ -18,10 +18,10 @@ import yaml
 APP_NAME = "llmswitch"
 CONFIG_ENV_VAR = "LLMSWITCH_CONFIG"
 
-PROTOCOLS = ("anthropic", "openai", "antigravity")
-MODEL_SOURCES = ("ollama", "openai", "anthropic", "antigravity", "none")
+PROTOCOLS = ("anthropic", "openai", "gemini", "antigravity")
+MODEL_SOURCES = ("ollama", "openai", "anthropic", "gemini", "antigravity", "none")
 AUTH_MODES = ("passthrough", "key", "none")
-AUTH_HEADERS = ("x-api-key", "authorization")
+AUTH_HEADERS = ("x-api-key", "authorization", "x-goog-api-key")
 
 
 class ConfigError(Exception):
