@@ -33,6 +33,16 @@ HOP_BY_HOP = {
 REQUEST_DROP = HOP_BY_HOP | {"host", "content-length"}
 RESPONSE_DROP = HOP_BY_HOP | {"content-length", "date", "server"}
 CREDENTIAL_HEADERS = {"authorization", "x-api-key"}
+NEGOTIATION_HEADERS = {"accept", "accept-encoding", "content-type"}
+
+
+class TranslationError(ValueError):
+    """A client request that cannot be expressed in the upstream's protocol."""
+
+
+def is_custom_tool(tool: Any) -> bool:
+    """A tool the client runs itself (name + input schema), as opposed to an Anthropic server tool."""
+    return isinstance(tool, dict) and tool.get("type") in (None, "custom") and "name" in tool and "input_schema" in tool
 
 
 @dataclass
@@ -65,6 +75,27 @@ def anthropic_error(status: int, message: str, err_type: str | None = None) -> J
         {"type": "error", "error": {"type": err_type or error_type_for_status(status), "message": message}},
         status_code=status,
     )
+
+
+def translate_error(status: int, body: bytes, provider: str) -> JSONResponse:
+    """A non-Anthropic upstream's error, re-shaped so the client handles it natively.
+
+    Understands ``{"error": {"message": ...}}``, ``{"error": "..."}``, either one wrapped in a
+    one-element list (Google does that), and falls back to the raw body.
+    """
+    message = body.decode(errors="replace")[:2000]
+    try:
+        data = json.loads(body)
+    except ValueError:
+        data = None
+    if isinstance(data, list) and data:
+        data = data[0]
+    err = data.get("error") if isinstance(data, dict) else None
+    if isinstance(err, dict):
+        message = str(err.get("message") or message)
+    elif isinstance(err, str):
+        message = err
+    return anthropic_error(status, f"{provider}: {message}", error_type_for_status(status))
 
 
 async def _relay(resp: httpx.Response) -> AsyncIterator[bytes]:
@@ -145,6 +176,20 @@ class Provider(ABC):
         if override:
             out = [(k, v) for k, v in out if k not in override]
             out.extend(override.items())
+        return out
+
+    def translated_headers(self, inc: Incoming, *, default_auth_header: str) -> list[tuple[str, str]]:
+        """The header policy for a JSON body this provider wrote itself, in another protocol.
+
+        The client's content negotiation describes the client's protocol and decoders, not
+        this request: the body is JSON, and the HTTP client asks for an encoding it can decode.
+        """
+        out = [
+            (k, v)
+            for k, v in self.upstream_headers(inc, default_auth_header=default_auth_header)
+            if k not in NEGOTIATION_HEADERS
+        ]
+        out.append(("content-type", "application/json"))
         return out
 
     def apply_compat(self, body: dict[str, Any]) -> dict[str, Any]:

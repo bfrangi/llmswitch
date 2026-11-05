@@ -9,13 +9,13 @@ client cannot tell the difference. Anything the OpenAI schema has no place for
 from __future__ import annotations
 
 import json
-import secrets
 from typing import TYPE_CHECKING, Any
 
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from .base import Provider, anthropic_error, dumps, error_type_for_status
+from .base import Provider, TranslationError, anthropic_error, dumps, is_custom_tool, translate_error
 from .discovery import discover_models
+from .events import MessageStream, anthropic_message, iter_sse_json, new_id, stream_error
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -24,14 +24,6 @@ if TYPE_CHECKING:
 
     from ..catalog import ModelEntry
     from .base import Incoming
-
-
-class TranslationError(ValueError):
-    pass
-
-
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(12)}"
 
 
 # ------------------------------------------------------------------ request side
@@ -137,10 +129,6 @@ def _assistant_message(content: Any) -> dict[str, Any]:
     return msg
 
 
-def _is_custom_tool(t: Any) -> bool:
-    return isinstance(t, dict) and t.get("type") in (None, "custom") and "name" in t and "input_schema" in t
-
-
 def _tool(t: dict[str, Any]) -> dict[str, Any]:
     fn: dict[str, Any] = {
         "name": t["name"],
@@ -190,7 +178,7 @@ def anthropic_to_openai(body: dict[str, Any], upstream_model: str) -> dict[str, 
     if body.get("stream"):
         out["stream"] = True
         out["stream_options"] = {"include_usage": True}
-    tools = [_tool(t) for t in body.get("tools") or [] if _is_custom_tool(t)]
+    tools = [_tool(t) for t in body.get("tools") or [] if is_custom_tool(t)]
     if tools:
         out["tools"] = tools
         tc = body.get("tool_choice")
@@ -252,87 +240,43 @@ def openai_to_anthropic(data: dict[str, Any], model: str) -> dict[str, Any]:
                 "input": _parse_arguments(fn.get("arguments")),
             }
         )
-    return {
-        "id": data.get("id") or new_id("msg"),
-        "type": "message",
-        "role": "assistant",
-        "model": model,
-        "content": content,
-        "stop_reason": _stop_reason(choice.get("finish_reason"), bool(calls)),
-        "stop_sequence": None,
-        "usage": _usage(data.get("usage")),
-    }
-
-
-def sse(event: str, payload: dict[str, Any]) -> bytes:
-    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+    return anthropic_message(
+        data.get("id") or new_id("msg"),
+        model,
+        content,
+        _stop_reason(choice.get("finish_reason"), bool(calls)),
+        _usage(data.get("usage")),
+    )
 
 
 class StreamTranslator:
     """Turns OpenAI chat-completion chunks into the Anthropic event sequence."""
 
     def __init__(self, model: str) -> None:
-        self.model = model
-        self.message_id = new_id("msg")
-        self.next_index = 0
-        self.open: tuple[str, int] | None = None  # (kind, block index)
-        self.tool_blocks: dict[Any, dict[str, Any]] = {}
+        self.out = MessageStream(model)
+        self.tool_blocks: dict[Any, dict[str, Any]] = {}  # OpenAI tool-call index -> block index, args seen
         self.finish_reason: Any = None
         self.usage: dict[str, int] | None = None
 
     def start(self) -> bytes:
-        return sse(
-            "message_start",
-            {
-                "type": "message_start",
-                "message": {
-                    "id": self.message_id,
-                    "type": "message",
-                    "role": "assistant",
-                    "model": self.model,
-                    "content": [],
-                    "stop_reason": None,
-                    "stop_sequence": None,
-                    "usage": {"input_tokens": 0, "output_tokens": 0},
-                },
-            },
-        )
-
-    def _open_block(self, kind: str, block: dict[str, Any]) -> list[bytes]:
-        events = self._close_block()
-        idx = self.next_index
-        self.next_index += 1
-        self.open = (kind, idx)
-        events.append(sse("content_block_start", {"type": "content_block_start", "index": idx, "content_block": block}))
-        return events
+        return self.out.start()
 
     def _close_block(self) -> list[bytes]:
-        if not self.open:
-            return []
-        kind, idx = self.open
-        events = []
-        if kind == "tool":
-            tb = next(t for t in self.tool_blocks.values() if t["block"] == idx)
-            if not tb["args"]:
-                events.append(
-                    sse(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": idx,
-                            "delta": {"type": "input_json_delta", "partial_json": "{}"},
-                        },
-                    )
-                )
-        events.append(sse("content_block_stop", {"type": "content_block_stop", "index": idx}))
-        self.open = None
-        return events
+        events: list[bytes] = []
+        if self.out.open_type == "tool_use":
+            tb = next(t for t in self.tool_blocks.values() if t["block"] == self.out.index)
+            if not tb["args"]:  # a tool call without arguments still has to yield valid JSON
+                events += self.out.delta({"type": "input_json_delta", "partial_json": "{}"})
+        return events + self.out.close()
+
+    def _open_block(self, block: dict[str, Any]) -> list[bytes]:
+        return self._close_block() + self.out.open(block)
 
     def _ensure(self, kind: str) -> list[bytes]:
-        if self.open and self.open[0] == kind:
+        if self.out.open_type == kind:
             return []
         block = {"type": "text", "text": ""} if kind == "text" else {"type": "thinking", "thinking": ""}
-        return self._open_block(kind, block)
+        return self._open_block(block)
 
     def feed(self, chunk: dict[str, Any]) -> list[bytes]:
         events: list[bytes] = []
@@ -343,120 +287,53 @@ class StreamTranslator:
             reasoning = delta.get("reasoning_content") or delta.get("reasoning")
             if reasoning:
                 events += self._ensure("thinking")
-                events.append(
-                    sse(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": self.open[1],
-                            "delta": {"type": "thinking_delta", "thinking": reasoning},
-                        },
-                    )
-                )  # type: ignore[index]
+                events += self.out.delta({"type": "thinking_delta", "thinking": reasoning})
             text = delta.get("content")
             if text:
                 events += self._ensure("text")
-                events.append(
-                    sse(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": self.open[1],
-                            "delta": {"type": "text_delta", "text": text},
-                        },
-                    )
-                )  # type: ignore[index]
+                events += self.out.delta({"type": "text_delta", "text": text})
             for tc in delta.get("tool_calls") or []:
                 key = tc.get("index", 0)
                 fn = tc.get("function") or {}
                 if key not in self.tool_blocks:
-                    tb = {"block": self.next_index, "args": False}
                     block = {
                         "type": "tool_use",
                         "id": tc.get("id") or new_id("toolu"),
                         "name": fn.get("name") or "",
                         "input": {},
                     }
-                    events += self._open_block("tool", block)
-                    self.tool_blocks[key] = tb
+                    events += self._open_block(block)
+                    self.tool_blocks[key] = {"block": self.out.index, "args": False}
                 tb = self.tool_blocks[key]
                 args = fn.get("arguments")
                 if args:
                     tb["args"] = True
-                    events.append(
-                        sse(
-                            "content_block_delta",
-                            {
-                                "type": "content_block_delta",
-                                "index": tb["block"],
-                                "delta": {"type": "input_json_delta", "partial_json": args},
-                            },
-                        )
-                    )
+                    events += self.out.delta({"type": "input_json_delta", "partial_json": args}, index=tb["block"])
             if choice.get("finish_reason"):
                 self.finish_reason = choice["finish_reason"]
         return events
 
     def finish(self) -> list[bytes]:
-        events = self._close_block()
-        usage = self.usage or {"input_tokens": 0, "output_tokens": 0}
-        events.append(
-            sse(
-                "message_delta",
-                {
-                    "type": "message_delta",
-                    "delta": {
-                        "stop_reason": _stop_reason(self.finish_reason, bool(self.tool_blocks)),
-                        "stop_sequence": None,
-                    },
-                    "usage": usage,
-                },
-            )
-        )
-        events.append(sse("message_stop", {"type": "message_stop"}))
-        return events
+        stop_reason = _stop_reason(self.finish_reason, bool(self.tool_blocks))
+        return self._close_block() + self.out.finish(stop_reason, self.usage or {"input_tokens": 0, "output_tokens": 0})
 
 
 async def translate_stream(resp: httpx.Response, model: str) -> AsyncIterator[bytes]:
     tr = StreamTranslator(model)
     yield tr.start()
     try:
-        async for line in resp.aiter_lines():
-            line = line.strip()
-            if not line.startswith("data:"):
-                continue
-            data = line[5:].strip()
-            if data == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data)
-            except ValueError:
-                continue
+        async for chunk in iter_sse_json(resp):
             if isinstance(chunk, dict) and chunk.get("error"):
                 err = chunk["error"]
-                message = err.get("message") if isinstance(err, dict) else str(err)
-                yield sse("error", {"type": "error", "error": {"type": "api_error", "message": message}})
+                yield stream_error(err.get("message") if isinstance(err, dict) else str(err))
                 return
-            for ev in tr.feed(chunk):
-                yield ev
+            if isinstance(chunk, dict):
+                for ev in tr.feed(chunk):
+                    yield ev
     finally:
         await resp.aclose()
     for ev in tr.finish():
         yield ev
-
-
-def translate_error(status: int, body: bytes, provider: str) -> JSONResponse:
-    message = body.decode(errors="replace")[:2000]
-    try:
-        data = json.loads(body)
-        err = data.get("error") if isinstance(data, dict) else None
-        if isinstance(err, dict):
-            message = str(err.get("message") or message)
-        elif isinstance(err, str):
-            message = err
-    except ValueError:
-        pass
-    return anthropic_error(status, f"{provider}: {message}", error_type_for_status(status))
 
 
 class OpenAIProvider(Provider):
@@ -478,10 +355,7 @@ class OpenAIProvider(Provider):
         except TranslationError as e:
             return anthropic_error(400, f"llmswitch: {e}")
         payload = self.apply_compat(payload)
-        headers = [
-            (k, v) for k, v in self.upstream_headers(inc, default_auth_header="authorization") if k != "content-type"
-        ]
-        headers.append(("content-type", "application/json"))
+        headers = self.translated_headers(inc, default_auth_header="authorization")
         resp = await self.send("POST", self.url("/chat/completions"), headers, dumps(payload))
         if isinstance(resp, JSONResponse):
             return resp
