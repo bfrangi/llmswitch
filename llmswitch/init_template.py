@@ -53,6 +53,9 @@ ANTIGRAVITY_BLOCK = """
     base_url: {base_url}
     models: anthropic                   # list models with /v1/models
     match: ["gemini-*"]                 # bare gemini-* names route here without a prefix
+    launch:
+      env:
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1048576"   # 1M context window for Gemini models
 """
 
 FOOTER = """
@@ -80,6 +83,9 @@ FOOTER = """
 #    models:
 #      source: gemini                   # GET /models, keeping the models that can generate text
 #      include: ["gemini-*"]
+#    launch:
+#      env:
+#        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
 claude:
   command: claude

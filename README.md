@@ -125,6 +125,9 @@ providers:                               # a mapping (or a list with `name:` key
     base_url: http://127.0.0.1:8080
     models: anthropic                    # discovers models via /v1/models
     match: ["gemini-*"]                  # bare gemini-* names route here without a prefix
+    launch:
+      env:
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1048576"   # 1M context window for Gemini models
   workstation:
     protocol: anthropic
     base_url: http://127.0.0.1:11435

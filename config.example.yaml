@@ -56,6 +56,9 @@ providers:
 #    base_url: http://127.0.0.1:8080
 #    models: anthropic                 # GET /v1/models
 #    match: ["gemini-*"]               # bare gemini-* names route here without a prefix
+#    launch:
+#      env:
+#        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1048576"   # 1M context window for Gemini models
 
 #  some-openai-server:                  # anything that only speaks OpenAI chat completions
 #    protocol: openai
@@ -70,6 +73,9 @@ providers:
 #    models:
 #      source: gemini                   # GET /models, keeping the models that can generate text
 #      include: ["gemini-*"]
+#    launch:
+#      env:
+#        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
 claude:
   command: claude
