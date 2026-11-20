@@ -30,6 +30,9 @@ providers:
       - {id: opus, bare: true, description: "alias resolved by Claude Code"}
       - {id: sonnet, bare: true, description: "alias resolved by Claude Code"}
       - {id: haiku, bare: true, description: "alias resolved by Claude Code"}
+    compat:                             # what other models leave in a conversation, which Anthropic refuses
+      drop_block_fields: {tool_use: [thoughtSignature]}   # antigravity-claude-proxy adds it to Gemini tool calls
+      drop_unsigned_thinking: true      # thinking from other models carries no Anthropic signature
 """
 
 LOCAL_BLOCK = """
@@ -53,6 +56,8 @@ ANTIGRAVITY_BLOCK = """
     base_url: {base_url}
     models: anthropic                   # list models with /v1/models
     match: ["gemini-*"]                 # bare gemini-* names route here without a prefix
+    compat:
+      system_as_message: true           # Google answers a 429 "quota exhausted" to Claude Code's system prompt
     launch:
       env:
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1048576"   # 1M context window for Gemini models

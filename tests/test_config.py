@@ -167,3 +167,24 @@ def test_template_is_valid(local: str | None, ag: str | None) -> None:
     assert cfg.provider("anthropic").auth.mode == "passthrough"
     assert (cfg.provider("local") is not None) is bool(local)
     assert (cfg.provider("google") is not None) is bool(ag)
+
+
+def test_conversation_compat_options(config) -> None:
+    c = config.provider("strict").compat
+    assert c.drop_block_fields == {"tool_use": ["thoughtSignature"]}
+    assert c.drop_unsigned_thinking is True
+    assert c.system_as_message is True
+    assert not config.provider("anthropic").compat.drop_unsigned_thinking
+
+
+def test_conversation_compat_options_are_type_checked() -> None:
+    with pytest.raises(ConfigError, match="drop_unsigned_thinking"):
+        parse("""
+providers:
+  a: {protocol: anthropic, base_url: http://a.test, compat: {drop_unsigned_thinking: "yes"}}
+""")
+    with pytest.raises(ConfigError, match=r"drop_block_fields\.tool_use"):
+        parse("""
+providers:
+  a: {protocol: anthropic, base_url: http://a.test, compat: {drop_block_fields: {tool_use: 3}}}
+""")

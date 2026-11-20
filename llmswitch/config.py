@@ -144,15 +144,24 @@ class AuthSpec:
 
 @dataclass
 class CompatSpec:
-    """Per-provider request surgery for upstreams that reject fields they don't know."""
+    """Per-provider request surgery for upstreams that reject fields they don't know.
+
+    ``drop_block_fields``, ``drop_unsigned_thinking`` and ``system_as_message`` act on the
+    conversation as the client sent it (Anthropic shape), before any translation; the
+    other options act on the body that goes upstream.
+    """
 
     drop_fields: list[str] = field(default_factory=list)
     drop_tool_fields: list[str] = field(default_factory=list)
     drop_headers: list[str] = field(default_factory=list)
     rename_fields: dict[str, str] = field(default_factory=dict)
     set_fields: dict[str, Any] = field(default_factory=dict)
+    drop_block_fields: dict[str, list[str]] = field(default_factory=dict)  # content block type -> fields
+    drop_unsigned_thinking: bool = False
+    system_as_message: bool = False  # send the system prompt as a leading system-role message
 
     def is_noop(self) -> bool:
+        """True when the upstream body needs no surgery (the conversation options are checked apart)."""
         return not (self.drop_fields or self.drop_tool_fields or self.rename_fields or self.set_fields)
 
 
@@ -386,13 +395,32 @@ def _parse_models(raw: Any, where: str) -> ModelsSpec:
 
 def _parse_compat(raw: Any, where: str) -> CompatSpec:
     m = _mapping(raw, where)
-    _only_keys(m, ("drop_fields", "drop_tool_fields", "drop_headers", "rename_fields", "set_fields"), where)
+    _only_keys(
+        m,
+        (
+            "drop_fields",
+            "drop_tool_fields",
+            "drop_headers",
+            "rename_fields",
+            "set_fields",
+            "drop_block_fields",
+            "drop_unsigned_thinking",
+            "system_as_message",
+        ),
+        where,
+    )
+    block_fields = _mapping(m.get("drop_block_fields"), f"{where}.drop_block_fields")
     return CompatSpec(
         drop_fields=_str_list(m.get("drop_fields"), f"{where}.drop_fields"),
         drop_tool_fields=_str_list(m.get("drop_tool_fields"), f"{where}.drop_tool_fields"),
         drop_headers=[h.lower() for h in _str_list(m.get("drop_headers"), f"{where}.drop_headers")],
         rename_fields=_str_dict(m.get("rename_fields"), f"{where}.rename_fields"),
         set_fields=dict(_mapping(m.get("set_fields"), f"{where}.set_fields")),
+        drop_block_fields={
+            str(kind): _str_list(fields, f"{where}.drop_block_fields.{kind}") for kind, fields in block_fields.items()
+        },
+        drop_unsigned_thinking=_bool(m.get("drop_unsigned_thinking"), f"{where}.drop_unsigned_thinking"),
+        system_as_message=_bool(m.get("system_as_message"), f"{where}.system_as_message"),
     )
 
 

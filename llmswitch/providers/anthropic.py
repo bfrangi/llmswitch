@@ -43,11 +43,10 @@ class AnthropicProvider(Provider):
 
     def _prepare_body(self, inc: Incoming, upstream_model: str) -> bytes:
         payload = inc.json or {}
-        if payload.get("model") == upstream_model and self.spec.compat.is_noop():
+        prepared = self.prepare(payload)
+        if prepared is payload and payload.get("model") == upstream_model and self.spec.compat.is_noop():
             return inc.body  # nothing to change: keep the client's exact bytes
-        payload = dict(payload)
-        payload["model"] = upstream_model
-        return dumps(self.apply_compat(payload))
+        return dumps(self.apply_compat({**prepared, "model": upstream_model}))
 
     async def _forward(self, inc: Incoming, path: str, upstream_model: str, raw: bool = False):
         body = self._prepare_body(inc, upstream_model)

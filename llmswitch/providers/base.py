@@ -35,6 +35,9 @@ RESPONSE_DROP = HOP_BY_HOP | {"content-length", "date", "server"}
 CREDENTIAL_HEADERS = {"authorization", "x-api-key"}
 NEGOTIATION_HEADERS = {"accept", "accept-encoding", "content-type"}
 
+# Every signature the gateway mints itself starts with this, followed by "<owner>:".
+GATEWAY_SIGNATURE_PREFIX = "llmswitch."
+
 
 class TranslationError(ValueError):
     """A client request that cannot be expressed in the upstream's protocol."""
@@ -43,6 +46,66 @@ class TranslationError(ValueError):
 def is_custom_tool(tool: Any) -> bool:
     """A tool the client runs itself (name + input schema), as opposed to an Anthropic server tool."""
     return isinstance(tool, dict) and tool.get("type") in (None, "custom") and "name" in tool and "input_schema" in tool
+
+
+def _scrub_block(
+    block: Any, drop_fields: dict[str, list[str]], drop_unsigned_thinking: bool, own_prefix: str | None
+) -> tuple[Any, bool]:
+    """One content block as this upstream may receive it: (block or None to leave it out, changed)."""
+    if not isinstance(block, dict):
+        return block, False
+    kind = block.get("type")
+    if kind == "thinking":
+        signature = block.get("signature")
+        foreign = (
+            isinstance(signature, str)
+            and signature.startswith(GATEWAY_SIGNATURE_PREFIX)
+            and not (own_prefix and signature.startswith(own_prefix))
+        )
+        if foreign or (drop_unsigned_thinking and not signature):
+            return None, True
+    fields = [f for f in drop_fields.get(kind, ()) if f in block] if isinstance(kind, str) else []
+    if fields:
+        return {k: v for k, v in block.items() if k not in fields}, True
+    return block, False
+
+
+def scrub_history(
+    messages: list[Any],
+    *,
+    drop_fields: dict[str, list[str]],
+    drop_unsigned_thinking: bool,
+    own_prefix: str | None = None,
+) -> list[Any] | None:
+    """The conversation without what another model left in it that this upstream would refuse.
+
+    Thinking blocks signed by the gateway for a different provider always go (their signature
+    means nothing anywhere else); thinking blocks with no signature go when
+    ``drop_unsigned_thinking`` is set; ``drop_fields`` removes fields by content block type.
+    A message left with no content goes too. Returns None when nothing changes, so the caller
+    can keep the client's bytes.
+    """
+    out: list[Any] = []
+    changed = False
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            out.append(message)
+            continue
+        kept: list[Any] = []
+        message_changed = False
+        for block in content:
+            new, block_changed = _scrub_block(block, drop_fields, drop_unsigned_thinking, own_prefix)
+            message_changed |= block_changed
+            if new is not None:
+                kept.append(new)
+        if not message_changed:
+            out.append(message)
+            continue
+        changed = True
+        if kept:
+            out.append({**message, "content": kept})
+    return out if changed else None
 
 
 @dataclass
@@ -116,6 +179,8 @@ class Provider(ABC):
     """One upstream server. Subclasses implement a wire protocol, not a vendor."""
 
     protocol: ClassVar[str] = ""
+    # How the thinking signatures this provider mints are tagged, if it mints any.
+    signature_prefix: ClassVar[str | None] = None
 
     def __init__(self, spec: ProviderSpec, http: httpx.AsyncClient) -> None:
         self.spec = spec
@@ -190,6 +255,32 @@ class Provider(ABC):
             if k not in NEGOTIATION_HEADERS
         ]
         out.append(("content-type", "application/json"))
+        return out
+
+    def prepare(self, body: dict[str, Any]) -> dict[str, Any]:
+        """The client's request as this upstream may receive it, still in Anthropic shape.
+
+        Cleans the conversation of what other models left in it (see ``scrub_history``) and,
+        with ``compat.system_as_message``, moves the system prompt into the conversation as a
+        leading ``system``-role message (Claude Code sends such messages itself). Returns
+        ``body`` itself when nothing changes.
+        """
+        c = self.spec.compat
+        out = body
+        messages = body.get("messages")
+        if isinstance(messages, list):
+            scrubbed = scrub_history(
+                messages,
+                drop_fields=c.drop_block_fields,
+                drop_unsigned_thinking=c.drop_unsigned_thinking,
+                own_prefix=self.signature_prefix,
+            )
+            if scrubbed is not None:
+                out = {**out, "messages": scrubbed}
+        if c.system_as_message and out.get("system"):
+            rest = {k: v for k, v in out.items() if k != "system"}
+            history = rest.get("messages") if isinstance(rest.get("messages"), list) else []
+            out = {**rest, "messages": [{"role": "system", "content": out["system"]}, *history]}
         return out
 
     def apply_compat(self, body: dict[str, Any]) -> dict[str, Any]:

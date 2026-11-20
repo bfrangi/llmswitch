@@ -114,17 +114,22 @@ providers:                               # a mapping (or a list with `name:` key
       - {id: opus, bare: true}
     # default: true                      # catch-all for unknown bare names
     # headers: {x-tenant: team}          # always added upstream
-    # compat:                            # only for upstreams that reject unknown fields
+    compat:                              # request surgery for upstreams that refuse what they don't know
+      drop_block_fields: {tool_use: [thoughtSignature]}   # conversation fields to remove, by content block type
+      drop_unsigned_thinking: true       # leave out thinking blocks with no signature (other models wrote them)
     #   drop_fields: [context_management]
     #   drop_tool_fields: [strict, defer_loading]
     #   drop_headers: [anthropic-beta]
     #   rename_fields: {max_tokens: max_completion_tokens}
     #   set_fields: {reasoning_effort: high}
+    #   system_as_message: true          # send the system prompt as a leading system-role message
   google:                                # Google models (Gemini / Antigravity via antigravity-claude-proxy)
     protocol: anthropic
     base_url: http://127.0.0.1:8080
     models: anthropic                    # discovers models via /v1/models
     match: ["gemini-*"]                  # bare gemini-* names route here without a prefix
+    compat:
+      system_as_message: true            # see "Google models" below
     launch:
       env:
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1048576"   # 1M context window for Gemini models
@@ -189,6 +194,21 @@ Antigravity. Set `protocol: anthropic`, `base_url: http://127.0.0.1:8080`, and
 `match: ["gemini-*"]`. If token counting is not implemented upstream (501), llmswitch converts it
 to 404 so Claude Code falls back to estimating tokens locally.
 
+Set `compat.system_as_message: true` on this provider. Google's Cloud Code backend answers a
+request whose system prompt reads like Claude Code's with `429 RESOURCE_EXHAUSTED`, even with
+quota left, and the proxy reports that as `You have exhausted your capacity on gemini-...` while
+its dashboard still shows the quota available. The trigger is not a single phrase: several
+unrelated paragraphs of Claude Code's prompt each set it off. With the option on, the gateway moves the system
+prompt into the conversation as a leading `system`-role message (Claude Code already sends
+such messages; the proxy passes them to Gemini as a user turn), and Gemini answers normally.
+
+The proxy also leaves things in the conversation that Anthropic refuses after a `/model`
+switch: a `thoughtSignature` field on Gemini's tool calls (`tool_use.thoughtSignature: Extra
+inputs are not permitted`) and thinking blocks with no signature. The template's `anthropic`
+provider removes both with `compat.drop_block_fields` and `compat.drop_unsigned_thinking`.
+Thinking blocks the gateway signed for its own `gemini` provider never reach any other
+provider, whatever the configuration.
+
 **A Gemini API key**, straight to Google. `protocol: gemini` translates to Gemini's own
 `generateContent` API rather than its OpenAI-compatible one, which cannot carry what Claude Code
 needs:
@@ -203,7 +223,9 @@ needs:
       include: ["gemini-4-*", "gemini-3.8-flash"]
 ```
 
-Models are then addressed as `gemini-key/gemini-4-argon` and so on. Claude Code's effort setting
+Models are then addressed as `gemini-key/gemini-4-argon` and so on. For several keys, add one
+provider per key; the provider name is what tells them apart in both pickers
+(`work/gemini-3.8-flash`, `research/gemini-3.8-flash`). Claude Code's effort setting
 picks Gemini's thinking level (`low`, `medium`, `high`; `xhigh` and `max` map to `high`), and
 Gemini's thought summaries arrive as thinking blocks when Claude Code asks to see thinking. Tool
 calls keep their thought signatures from one step to the next, which Gemini requires. Images
@@ -283,6 +305,8 @@ Gateway endpoints: `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /
 | Claude Code shows a 401 on Claude models | the Anthropic provider must have `auth: passthrough`; check `/status` inside Claude Code shows the gateway URL and your login |
 | Local model answers are cut short or forgetful | raise the server's context length (see above) |
 | `400 ... Extra inputs are not permitted` from a non-Anthropic upstream | add a `compat.drop_fields` entry naming the field |
+| `400 messages.N.content.M.tool_use.thoughtSignature: Extra inputs are not permitted` after switching from Gemini to Claude | add the `compat` block from the template's `anthropic` provider (`drop_block_fields`, `drop_unsigned_thinking`) |
+| `RESOURCE_EXHAUSTED: You have exhausted your capacity on gemini-...` while the proxy's dashboard shows quota left | set `compat.system_as_message: true` on the antigravity provider (see "Google models") |
 | Nothing happens, then a timeout | `llmswitch logs -n 50` shows the upstream the request went to |
 | `... is temporarily unavailable, so auto mode cannot determine the safety of ...` | the classifier was routed to a local model and queued behind your turn; remove any `ANTHROPIC_DEFAULT_*_MODEL` pins from `launch.env` so it reaches Anthropic |
 | `/model` highlights Sonnet while a local model answers, or the local model has no row | an `ANTHROPIC_DEFAULT_SONNET_MODEL` pin made the Sonnet row resolve to it; remove the pin |

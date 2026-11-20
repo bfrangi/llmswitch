@@ -262,3 +262,79 @@ async def test_antigravity_discovery_and_count_tokens(recorder) -> None:
         assert r.status_code == 200
         assert r.json()["content"][0]["text"] == "ag hello"
     await upstream.aclose()
+
+
+# What other models leave in a conversation: Gemini through antigravity-claude-proxy puts a
+# thoughtSignature on tool_use blocks and sends unsigned thinking; the native gemini provider
+# signs thinking blocks with its own tag; a Claude turn carries a real signature.
+MIXED_HISTORY = [
+    {"role": "user", "content": "hi"},
+    {
+        "role": "assistant",
+        "content": [
+            {"type": "thinking", "thinking": "gemini via proxy", "signature": ""},
+            {"type": "tool_use", "id": "t1", "name": "Bash", "input": {}, "thoughtSignature": "CiQB"},
+        ],
+    },
+    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+    {
+        "role": "assistant",
+        "content": [
+            {"type": "thinking", "thinking": "native gemini", "signature": "llmswitch.gemini:SIG"},
+            {"type": "thinking", "thinking": "claude", "signature": "EqQBCkgI"},
+            {"type": "text", "text": "done"},
+        ],
+    },
+    {"role": "user", "content": "next"},
+]
+
+
+async def test_strict_upstream_gets_a_clean_history_and_system(client, recorder) -> None:
+    body = {
+        "model": "strict/m",
+        "max_tokens": 1,
+        "system": [{"type": "text", "text": "You are Claude Code."}, {"type": "text", "text": "Be brief."}],
+        "messages": MIXED_HISTORY,
+    }
+    r = await client.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
+    assert r.status_code == 200
+    sent = recorder.last["json"]
+    assert "system" not in sent
+    system, *history = sent["messages"]
+    assert system == {"role": "system", "content": body["system"]}, "the system prompt opens the conversation"
+    assert history[1]["content"] == [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]
+    assert history[3]["content"] == [
+        {"type": "thinking", "thinking": "claude", "signature": "EqQBCkgI"},
+        {"type": "text", "text": "done"},
+    ]
+    assert history[2] == MIXED_HISTORY[2], "untouched turns are forwarded as they came"
+
+
+async def test_gateway_signatures_never_reach_another_provider(client, recorder) -> None:
+    body = {"model": "ollama/qwen3:14b", "max_tokens": 1, "messages": MIXED_HISTORY}
+    r = await client.post("/v1/messages", json=body, headers=CLIENT_HEADERS)
+    assert r.status_code == 200
+    sent = recorder.last["json"]
+    assert sent["messages"][1] == MIXED_HISTORY[1], "without compat options, only the gateway's own tags go"
+    assert [b.get("signature") for b in sent["messages"][3]["content"]] == ["EqQBCkgI", None]
+
+
+async def test_clean_history_keeps_the_client_bytes(client, recorder) -> None:
+    raw = (
+        b'{"model": "claude-opus-5-5", "messages": [{"role": "assistant", "content": '
+        b'[{"type": "thinking", "thinking": "x", "signature": "EqQB"}]}]}'
+    )
+    r = await client.post("/v1/messages", content=raw, headers=CLIENT_HEADERS)
+    assert r.status_code == 200
+    assert recorder.last["raw"] == raw
+
+
+async def test_a_turn_left_empty_is_left_out(client, recorder) -> None:
+    history = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": [{"type": "thinking", "thinking": "only this", "signature": ""}]},
+        {"role": "user", "content": "again"},
+    ]
+    r = await client.post("/v1/messages", json={"model": "strict/m", "messages": history}, headers=CLIENT_HEADERS)
+    assert r.status_code == 200
+    assert recorder.last["json"]["messages"] == [history[0], history[2]]

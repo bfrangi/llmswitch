@@ -29,6 +29,20 @@ lists all live in the configuration file; the code names none of them.
   still lacks one gets Google's documented placeholder. Anthropic messages never end in
   thinking, so a signature Gemini sends after the answer is already out is dropped; Gemini
   only enforces them on function calls, which carry their own.
+- **Clean the conversation per destination, still without state.** A `/model` switch sends
+  one model's turns to another, and Anthropic validates what comes back strictly. Every
+  provider runs the request through `Provider.prepare` before anything else: thinking blocks
+  carrying another provider's `llmswitch.<owner>:` tag are always left out, and `compat`
+  can drop named fields by block type (antigravity-claude-proxy's `thoughtSignature` on
+  `tool_use`) and unsigned thinking blocks. Signatures are opaque, and Anthropic's own no
+  longer share one recognisable prefix, so nothing is inferred from their format. A request
+  that needs none of this is still forwarded byte for byte.
+- **Move the system prompt rather than rewrite it.** Google's Cloud Code backend (behind
+  antigravity-claude-proxy) answers `429 RESOURCE_EXHAUSTED` to a system instruction that
+  reads like Claude Code's. Bisecting the prompt found several independent triggers, so a
+  list of phrases to rewrite would break with the next Claude Code release.
+  `compat.system_as_message` puts the whole prompt in the conversation instead, where the
+  check does not look.
 - **One block model for every translator.** A translating provider describes its answer as
   content blocks opened, extended, and closed. `MessageStream` renders that as server-sent
   events and `MessageBuilder` as a finished message, so streamed and non-streamed answers
@@ -70,6 +84,12 @@ a function call without a signature or with one it did not issue, accepts a sign
 another Gemini model, needs a `mimeType` to fetch a URL, rejects any thinking configuration
 for models whose listing says they do not think, and accepts `maxOutputTokens` above a
 model's limit.
+
+antigravity-claude-proxy 2.9.1 (November 2026) with gemini-4-hydrogen-sonar and
+gemini-3.8-flash-high, through Claude Code 2.1.329: the 429 for Claude Code's system prompt
+and its absence once the prompt is a message; one session switched from proxy Gemini to
+Claude to native Gemini to Claude and back to proxy Gemini, with tool calls, and no
+upstream refused it.
 
 ## Roadmap
 

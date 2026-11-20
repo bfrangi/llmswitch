@@ -199,6 +199,9 @@ providers:
       drop_fields: [context_management]
       drop_tool_fields: [strict]
       drop_headers: [anthropic-beta]
+      drop_block_fields: {tool_use: [thoughtSignature]}
+      drop_unsigned_thinking: true
+      system_as_message: true
   openai:
     protocol: openai
     base_url: http://openai.test/v1

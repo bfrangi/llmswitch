@@ -39,7 +39,15 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from .base import Provider, TranslationError, anthropic_error, dumps, is_custom_tool, translate_error
+from .base import (
+    GATEWAY_SIGNATURE_PREFIX,
+    Provider,
+    TranslationError,
+    anthropic_error,
+    dumps,
+    is_custom_tool,
+    translate_error,
+)
 from .discovery import discover_models
 from .events import MessageBuilder, MessageStream, anthropic_message, iter_sse_json, new_id, stream_error
 
@@ -54,7 +62,7 @@ if TYPE_CHECKING:
     from .events import BlockWriter
 
 AUTH_HEADER = "x-goog-api-key"
-SIGNATURE_PREFIX = "llmswitch.gemini:"
+SIGNATURE_PREFIX = f"{GATEWAY_SIGNATURE_PREFIX}gemini:"
 PLACEHOLDER_SIGNATURE = "skip_thought_signature_validator"
 
 # Anthropic's effort scale onto Gemini's thinking levels (Gemini stops at "high").
@@ -424,6 +432,7 @@ async def translate_stream(resp: httpx.Response, model: str) -> AsyncIterator[by
 
 class GeminiProvider(Provider):
     protocol = "gemini"
+    signature_prefix = SIGNATURE_PREFIX
 
     def __init__(self, spec: ProviderSpec, http: httpx.AsyncClient) -> None:
         super().__init__(spec, http)
@@ -438,7 +447,7 @@ class GeminiProvider(Provider):
         if inc.json is None:
             return anthropic_error(400, "llmswitch: request body must be a JSON object")
         try:
-            payload = anthropic_to_gemini(inc.json, thinking=upstream_model not in self._without_thinking)
+            payload = anthropic_to_gemini(self.prepare(inc.json), thinking=upstream_model not in self._without_thinking)
         except TranslationError as e:
             return anthropic_error(400, f"llmswitch: {e}")
         stream = bool(inc.json.get("stream"))
@@ -462,7 +471,7 @@ class GeminiProvider(Provider):
         if inc.json is None:
             return anthropic_error(400, "llmswitch: request body must be a JSON object")
         try:
-            payload = count_tokens_request(inc.json, upstream_model)
+            payload = count_tokens_request(self.prepare(inc.json), upstream_model)
         except TranslationError as e:
             return anthropic_error(400, f"llmswitch: {e}")
         resp = await self._post(inc, upstream_model, "countTokens", payload)

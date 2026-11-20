@@ -510,6 +510,8 @@ async def test_messages_use_the_key_and_translate(gemini) -> None:
     assert h["x-goog-api-key"] == "AIza-test" and "authorization" not in h and "x-api-key" not in h
     assert h["content-type"] == "application/json" and "br" not in h.get("accept-encoding", "")
     assert sent["json"]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "high"}
+    calls = [p for p in sent["json"]["contents"][1]["parts"] if "functionCall" in p]
+    assert calls[0]["thoughtSignature"] == "SIG1", "the provider's own signatures survive the history clean-up"
 
 
 @pytest.mark.anyio

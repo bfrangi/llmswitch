@@ -351,7 +351,7 @@ class OpenAIProvider(Provider):
         if inc.json is None:
             return anthropic_error(400, "llmswitch: request body must be a JSON object")
         try:
-            payload = anthropic_to_openai(inc.json, upstream_model)
+            payload = anthropic_to_openai(self.prepare(inc.json), upstream_model)
         except TranslationError as e:
             return anthropic_error(400, f"llmswitch: {e}")
         payload = self.apply_compat(payload)
