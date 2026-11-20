@@ -188,3 +188,18 @@ def test_detect_local_antigravity(monkeypatch) -> None:
     assert cli._detect_local_antigravity() == "http://127.0.0.1:8080"
     monkeypatch.setattr("llmswitch.cli.port_open", lambda h, p: False)
     assert cli._detect_local_antigravity() is None
+
+
+def test_gateway_command_forwards_its_options(monkeypatch) -> None:
+    import llmswitch.gateway
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(llmswitch.gateway, "main", lambda argv: seen.append(argv) or 0)
+    assert cli.main(["gateway", "--port", "11446", "--host", "0.0.0.0", "--log-level", "debug"]) == 0
+    assert cli.main(["--config", "/x.yaml", "gateway", "--port=1"]) == 0
+    assert cli.main(["gateway"]) == 0
+    assert seen == [
+        ["--host", "0.0.0.0", "--port", "11446", "--log-level", "debug"],
+        ["--config", "/x.yaml", "--port", "1"],
+        [],
+    ]

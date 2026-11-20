@@ -303,8 +303,11 @@ def cmd_logs(args: argparse.Namespace) -> int:
 def cmd_gateway(args: argparse.Namespace) -> int:
     from .gateway import main as gateway_main
 
-    extra = [a for a in (args.extra or []) if a != "--"]
-    return gateway_main((["--config", args.config] if args.config else []) + extra)
+    argv = ["--config", args.config] if args.config else []
+    for flag, value in (("--host", args.host), ("--port", args.port), ("--log-level", args.log_level)):
+        if value is not None:
+            argv += [flag, str(value)]
+    return gateway_main(argv)
 
 
 def cmd_config(args: argparse.Namespace) -> int:
@@ -444,7 +447,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-f", "--follow", action="store_true")
     p.set_defaults(fn=cmd_logs)
     p = sub.add_parser("gateway", help="run the gateway in the foreground")
-    p.add_argument("extra", nargs=argparse.REMAINDER, help="arguments for the gateway (--host, --port, --log-level)")
+    p.add_argument("--host", help="override gateway.host")
+    p.add_argument("--port", type=int, help="override gateway.port")
+    p.add_argument("--log-level", help="override gateway.log_level")
     p.set_defaults(fn=cmd_gateway)
     p = sub.add_parser("config", help="show the config path and whether it is valid")
     p.add_argument("--edit", action="store_true", help="open it in $EDITOR")
