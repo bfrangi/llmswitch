@@ -61,8 +61,15 @@ llmswitch down                               # stop the gateway and the tunnels
 
 Inside Claude Code, `/model` lists every routable model below the built-in Claude rows,
 because the launcher hands Claude Code the lineup through its `--settings` flag; typing
-`/model workstation/qwen3-coder:30b` works too. Pressing Enter in the launcher picker starts
-Claude Code with its own default model, which goes to Anthropic through the gateway.
+`/model workstation/qwen3-coder:30b` works too.
+
+The launcher picker filters as you type: every word must occur in the provider, model id,
+display name, or description, and initials match too (`g4c` finds `gemini-4-carbon`). The
+arrows (or Ctrl-P / Ctrl-N, PgUp / PgDn) move, Enter launches, and Esc clears the search, then
+quits; the bottom line shows the exact `claude --model ...` that Enter runs. Its first row,
+selected from the start, is the default: Enter straight away starts Claude Code with its own
+default model (or `claude.default_model`), which goes to Anthropic through the gateway.
+Without a terminal curses can drive, the picker falls back to a numbered list.
 Switching models mid-session keeps the launch environment of the model you started
 with (background-task pin, context window), so start a new session when that matters.
 
