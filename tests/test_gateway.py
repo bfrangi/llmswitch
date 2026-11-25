@@ -243,6 +243,7 @@ async def test_antigravity_discovery_and_count_tokens(recorder) -> None:
         assert len(models) == 1
         assert models[0]["launch_id"] == "gemini-3.8-flash-high"
         assert models[0]["display_name"] == "Gemini 3.8 Flash (High)"
+        assert models[0]["description"] == "", "a description that only repeats the name is dropped"
 
         # 2. Token counting converts 501 into 404 for Claude Code compatibility
         r = await client.post(

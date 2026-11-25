@@ -111,6 +111,8 @@ async def discover_anthropic(spec: ProviderSpec, http: httpx.AsyncClient, auth: 
             continue
         display_name = m.get("display_name") or m.get("description") or mid
         description = m.get("description") or m.get("owned_by") or ""
+        if description == display_name:  # some servers repeat the name as the description
+            description = ""
         out.append(
             ModelEntry(
                 provider=spec.name,
