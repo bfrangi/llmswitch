@@ -82,6 +82,8 @@ providers:
 #      env:
 #        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"
 
+updates: auto                           # auto: install new releases in the background; notify: only say so; off
+
 claude:
   command: claude
   default_model: null                   # null: Claude Code's own default when you just press Enter

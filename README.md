@@ -39,7 +39,14 @@ $EDITOR ~/.config/llmswitch/config.yaml
 llmswitch                         # starts what is needed, shows the model picker, launches Claude Code
 ```
 
-Upgrade with `uv tool upgrade llmswitch` (git install) or `uv tool install . --reinstall` (clone).
+llmswitch keeps itself up to date from the project's tagged releases. Once a day the launcher
+looks for a newer `v<version>` tag, in the background so a launch never waits; with the default
+`updates: auto`, an install made with `uv tool` (or pipx) installs it there and then, and the
+next launch says so and replaces the gateway once no session has a request in progress.
+`updates: notify` only says a release is out, `updates: off` never looks, and
+`llmswitch update` (`--check` to just look) does it on demand. A clone installed with
+`uv tool install .` is never touched: pull it, then `uv tool install --reinstall .`, or install
+it once with `--editable` so that `llmswitch restart` is all a change needs.
 
 `llmswitch init` pre-fills a `local` provider if an Ollama answers on this machine, and
 leaves commented examples for a tunnelled remote machine and an OpenAI-style server.
@@ -151,6 +158,8 @@ providers:                               # a mapping (or a list with `name:` key
         CLAUDE_CODE_AUTO_MODE_SERVER: "0"
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: "{details.context_length}"   # {model} {upstream_model} {provider} {details.<key>};
                                                                      # a placeholder with no value drops the variable
+
+updates: auto                            # auto | notify | off, or {mode: auto, check_hours: 24}
 
 claude:
   command: claude
@@ -298,6 +307,7 @@ Token counting is not available, so Claude Code estimates context usage itself.
 | `llmswitch logs [-n N] [-f]` | gateway log (`~/.local/state/llmswitch/gateway.log`) |
 | `llmswitch gateway [--host H] [--port P]` | run the gateway in the foreground |
 | `llmswitch config [--edit]` | config path and validity |
+| `llmswitch update [--check]` | install the newest tagged release now (or only say whether there is one) |
 
 Gateway endpoints: `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models`,
 `HEAD /api/hello`, `GET /healthz`, `GET /llmswitch/models?refresh=1`, `POST /llmswitch/refresh`.
@@ -336,8 +346,13 @@ uv run llmswitch gateway --config config.example.yaml --port 11499   # foregroun
 
 Design notes live in [docs/DESIGN.md](docs/DESIGN.md). CI runs ruff and pytest on Python 3.10 to 3.13.
 
+To release, set the new version in `llmswitch/__init__.py` (the only place it lives), commit,
+and push a matching tag: `git tag v0.4.0 && git push origin main v0.4.0`. Installs pick it up
+within a day; `gh release create v0.4.0 --generate-notes` adds release notes if you want them.
+
 Layout: `llmswitch/config.py` (schema and loader), `llmswitch/catalog.py` (discovery and routing),
 `llmswitch/providers/` (`anthropic` pass-through, `openai` and `gemini` translation, `events`
 for the response blocks both translators build, discovery sources),
 `llmswitch/gateway.py` (FastAPI app), `llmswitch/tunnels.py` and `llmswitch/daemon.py` (process
-management), `llmswitch/picker.py`, `llmswitch/cli.py` (both entry points).
+management), `llmswitch/picker.py`, `llmswitch/updates.py` (self-update from tagged releases),
+`llmswitch/cli.py` (both entry points).

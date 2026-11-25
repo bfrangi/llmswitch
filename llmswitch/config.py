@@ -22,6 +22,7 @@ PROTOCOLS = ("anthropic", "openai", "gemini", "antigravity")
 MODEL_SOURCES = ("ollama", "openai", "anthropic", "gemini", "antigravity", "none")
 AUTH_MODES = ("passthrough", "key", "none")
 AUTH_HEADERS = ("x-api-key", "authorization", "x-goog-api-key")
+UPDATE_MODES = ("auto", "notify", "off")
 
 
 class ConfigError(Exception):
@@ -202,12 +203,21 @@ class ClaudeSettings:
 
 
 @dataclass
+class UpdateSettings:
+    """How llmswitch keeps itself current from the project's tagged releases."""
+
+    mode: str = "auto"  # auto: install in the background; notify: say so at launch; off
+    check_hours: float = 24.0  # how often the launcher looks for a new release
+
+
+@dataclass
 class Config:
     path: Path
     gateway: GatewaySettings
     tunnels: dict[str, TunnelSpec]
     providers: list[ProviderSpec]
     claude: ClaudeSettings
+    updates: UpdateSettings = field(default_factory=UpdateSettings)
 
     def provider(self, name: str) -> ProviderSpec | None:
         return next((p for p in self.providers if p.name == name), None)
@@ -512,9 +522,27 @@ def _parse_claude(raw: Any) -> ClaudeSettings:
     )
 
 
+def _parse_updates(raw: Any) -> UpdateSettings:
+    d = UpdateSettings()
+    if raw is None:
+        return d
+    m = {"mode": raw} if isinstance(raw, (str, bool)) else _mapping(raw, "updates")
+    _only_keys(m, ("mode", "check_hours"), "updates")
+    mode = m.get("mode")
+    if isinstance(mode, bool):  # YAML reads a bare off/on as false/true
+        mode = "auto" if mode else "off"
+    mode = _str(mode, "updates.mode", d.mode) or d.mode
+    if mode not in UPDATE_MODES:
+        raise ConfigError(f"updates: expected one of {', '.join(UPDATE_MODES)}")
+    hours = _float(m.get("check_hours"), "updates.check_hours", d.check_hours)
+    if hours <= 0:
+        raise ConfigError("updates.check_hours: must be positive")
+    return UpdateSettings(mode=mode, check_hours=hours)
+
+
 def parse_config(raw: Any, path: Path) -> Config:
     top = _mapping(raw, "config")
-    _only_keys(top, ("gateway", "tunnels", "providers", "claude"), str(path))
+    _only_keys(top, ("gateway", "tunnels", "providers", "claude", "updates"), str(path))
     top = interpolate(top)
     cfg = Config(
         path=path,
@@ -522,6 +550,7 @@ def parse_config(raw: Any, path: Path) -> Config:
         tunnels=_parse_tunnels(top.get("tunnels")),
         providers=_parse_providers(top.get("providers")),
         claude=_parse_claude(top.get("claude")),
+        updates=_parse_updates(top.get("updates")),
     )
     for p in cfg.providers:
         if p.tunnel and p.tunnel not in cfg.tunnels:

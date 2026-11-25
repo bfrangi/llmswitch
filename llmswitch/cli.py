@@ -13,7 +13,7 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any
 
-from . import __version__
+from . import __version__, updates
 from .config import ConfigError, load_config, resolve_config_path
 from .daemon import GatewayError, GatewayManager
 from .init_template import render_template
@@ -116,6 +116,14 @@ def launch_env(config: Config, chosen: str | None, models: list[dict[str, Any]])
     return env
 
 
+def _update_notices(config: Config) -> list[str]:
+    """The launch-time update check; a failure here must never stop Claude Code from starting."""
+    try:
+        return updates.on_launch(config)
+    except Exception as e:
+        return [f"llmswitch: the update check failed ({type(e).__name__}: {e})"]
+
+
 def picker_rows(models: list[dict[str, Any]]) -> list[dict[str, str]]:
     """Rows for Claude Code's /model picker: every model the gateway routes, by its launch name.
 
@@ -164,6 +172,9 @@ def ensure_up(config: Config, force: bool = False) -> GatewayManager:
             _err(f"continuing without tunnel '{spec.name}'")
     gm = GatewayManager(config)
     print(f"gateway: {gm.up(force=force)} at {gm.base_url}")
+    replaced = gm.replace_if_outdated(__version__)
+    if replaced:
+        print(f"gateway: {replaced}")
     return gm
 
 
@@ -217,6 +228,43 @@ def cmd_down(args: argparse.Namespace) -> int:
     tm = TunnelManager(config)
     for spec in config.tunnels.values():
         print(f"tunnel {spec.name}: {tm.down(spec)}")
+    return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    config = _load(args.config)
+    how = updates.detect_install()
+    if how.tool == "checkout":
+        print(
+            f"llmswitch {__version__} runs from the checkout at {how.location}: update it there, then `llmswitch restart`"
+        )
+        return 0
+    url = updates.repository_url()
+    if not url:
+        _err("the package metadata names no repository to look for releases in")
+        return 1
+    try:
+        latest = updates.fetch_newest_release(url)
+    except (OSError, subprocess.SubprocessError) as e:
+        _err(f"could not list the releases at {url}: {e}")
+        return 1
+    if not latest or not updates.is_newer(latest, __version__):
+        print(f"llmswitch {__version__} is current" + ("" if latest else f" (no v<version> tags at {url} yet)"))
+        return 0
+    command = how.command(url, latest)
+    if args.check or not command:
+        print(f"llmswitch {latest} is available (this is {__version__}): {how.hint(url, latest)}")
+        return 0
+    print("running: " + " ".join(command))
+    rc = subprocess.call(command)
+    if rc:
+        _err(f"the update exited with status {rc}")
+        return rc
+    state = updates.load_state(config)
+    state.update(latest=latest, installed=latest, previous=__version__, announced=latest, error=None)
+    updates.save_state(config, state)
+    print(f"llmswitch {latest} installed")
+    print(f"gateway: {GatewayManager(config).replace_if_outdated(latest) or 'not running'}")
     return 0
 
 
@@ -332,14 +380,14 @@ def cmd_config(args: argparse.Namespace) -> int:
 # -------------------------------------------------------------------- parsers
 
 CONFIG_HELP = "config file (default: $LLMSWITCH_CONFIG or ~/.config/llmswitch/config.yaml)"
-SUBCOMMANDS = ("claude", "init", "up", "down", "restart", "status", "models", "logs", "gateway", "config")
+SUBCOMMANDS = ("claude", "init", "up", "down", "restart", "status", "models", "logs", "gateway", "config", "update")
 HELP_FLAGS = ("-h", "--help", "--version")
 
 LAUNCH_EPILOG = """\
 Anything else is passed to Claude Code unchanged, for example:
   llmswitch --resume
   llmswitch --model local/qwen3:14b -p "explain this repo"
-Management: llmswitch init | up | down | restart | status | models | logs | gateway | config
+Management: llmswitch init | up | down | restart | status | models | logs | gateway | config | update
 """
 
 
@@ -373,6 +421,8 @@ def launch(argv: list[str]) -> int:
     config = _load(args.config)
     try:
         gm = ensure_up(config, force=args.force)
+        for line in _update_notices(config):
+            print(line)
         data = gm.get_json("/llmswitch/models?refresh=1")
         chosen: str | None = args.model
         if chosen is None and not args.no_picker and sys.stdin.isatty() and sys.stdout.isatty():
@@ -452,6 +502,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, help="override gateway.port")
     p.add_argument("--log-level", help="override gateway.log_level")
     p.set_defaults(fn=cmd_gateway)
+    p = sub.add_parser("update", help="install the newest tagged release now")
+    p.add_argument("--check", action="store_true", help="only say whether there is one")
+    p.set_defaults(fn=cmd_update)
     p = sub.add_parser("config", help="show the config path and whether it is valid")
     p.add_argument("--edit", action="store_true", help="open it in $EDITOR")
     p.set_defaults(fn=cmd_config)

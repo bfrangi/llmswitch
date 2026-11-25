@@ -22,12 +22,52 @@ from .config import APP_NAME, ConfigError, load_config
 from .providers import Incoming, anthropic_error, build_provider
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 
     from .config import Config
     from .providers import Provider
 
+    Message = MutableMapping[str, Any]
+    ASGIApp = Callable[
+        [Message, Callable[[], Awaitable[Message]], Callable[[Message], Awaitable[None]]], Awaitable[None]
+    ]
+
 log = logging.getLogger("llmswitch.gateway")
+
+
+class Activity:
+    """Model requests still being served, streams included, so an update waits for idle."""
+
+    def __init__(self) -> None:
+        self.active = 0
+
+
+class TrackActivity:
+    """ASGI middleware: counts a ``/v1/messages`` request until its last body chunk is sent."""
+
+    def __init__(self, app: ASGIApp, activity: Activity) -> None:
+        self.app = app
+        self.activity = activity
+
+    async def __call__(self, scope: Message, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or not str(scope.get("path", "")).startswith("/v1/messages"):
+            await self.app(scope, receive, send)
+            return
+        self.activity.active += 1
+        finished = False
+
+        async def tracked(message: Message) -> None:
+            nonlocal finished
+            await send(message)
+            if message["type"] == "http.response.body" and not message.get("more_body") and not finished:
+                finished = True
+                self.activity.active -= 1
+
+        try:
+            await self.app(scope, receive, tracked)
+        finally:
+            if not finished:
+                self.activity.active -= 1
 
 
 def make_http_client(config: Config) -> httpx.AsyncClient:
@@ -101,6 +141,8 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
     app = FastAPI(
         title=APP_NAME, version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
     )
+    activity = Activity()
+    app.add_middleware(TrackActivity, activity=activity)
 
     async def dispatch(request: Request, call: str) -> Response:
         inc = await read_incoming(request)
@@ -136,6 +178,7 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None) -> FastAPI
                 "config": str(config.path),
                 "listen": config.gateway.base_url,
                 "started_at": request.app.state.started_at,
+                "active_requests": activity.active,
                 "providers": provider_report(config, request.app.state.catalog),
             }
         )

@@ -69,6 +69,16 @@ lists all live in the configuration file; the code names none of them.
   model's own row, turns the Claude rows into the local model, and sends safety checks
   to a model that cannot answer them.
 
+- **Update from tags, in the background, and never mid-request.** A release is a `v<version>`
+  tag in the repository the package metadata names, read with `git ls-remote`, so no hosting
+  API or token is involved and the version lives in one file. The check and the install run in a
+  detached process the launcher starts at most once per `updates.check_hours`, so a launch never
+  waits on the network, and they use the tool that installed llmswitch (`uv tool`, `pipx`); a
+  plain pip install only gets told, and a directory checkout is its owner's business. The
+  gateway counts model requests until their last streamed byte and reports the count in
+  `/healthz`; a launcher of a newer version replaces it only when that count is zero, since a
+  restart would cut off another session's answer.
+
 ## Verified against
 
 Ollama 0.32 and 0.34: `/v1/messages` ignores unknown fields and headers, relaxes

@@ -139,6 +139,23 @@ class GatewayManager:
             f"gateway did not answer within {self.START_TIMEOUT:g}s; last log lines ({self.logfile}):\n{self.tail()}"
         )
 
+    def replace_if_outdated(self, version: str) -> str | None:
+        """Restart a running gateway of another version, but only while it serves no request.
+
+        None when there is nothing to do; otherwise what happened, or why it did not.
+        """
+        h = self.health()
+        if not h or h.get("version") == version:
+            return None
+        old = h.get("version") or "an unknown version"
+        busy = h.get("active_requests")
+        if busy != 0:
+            why = "it does not report whether it is busy" if busy is None else f"{busy} request(s) are in progress"
+            return f"running {old} rather than {version}, and {why}; `llmswitch restart` replaces it"
+        self.down()
+        self.up()
+        return f"replaced {old} with {version}"
+
     def down(self) -> str:
         pid = self.pid()
         if pid is None or not _alive(pid):
