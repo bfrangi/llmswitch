@@ -55,6 +55,7 @@ class ModelEntry:
             "display_name": self.display_name or self.upstream_id,
             "description": self.description,
             "details": self.details,
+            "bare": self.bare,
         }
 
 

@@ -16,7 +16,21 @@ MODELS = [
         "upstream_id": "qwen3:14b",
         "details": {"context_length": 40960},
     },
-    {"id": "anthropic/opus", "launch_id": "opus", "provider": "anthropic", "upstream_id": "opus", "details": {}},
+    {
+        "id": "anthropic/opus",
+        "launch_id": "opus",
+        "provider": "anthropic",
+        "upstream_id": "opus",
+        "details": {},
+        "bare": True,
+    },
+    {
+        "id": "google/gemini-x",
+        "launch_id": "gemini-x",  # bare because the provider's match glob covers it
+        "provider": "google",
+        "upstream_id": "gemini-x",
+        "details": {},
+    },
 ]
 
 
@@ -96,7 +110,7 @@ def test_build_command_adds_picker_rows(config) -> None:
     assert cmd[:3] == ["claude", "--model", "ollama/qwen3:14b"] and cmd[-1] == "--resume"
     lineup = json.loads(cmd[cmd.index("--settings") + 1])["modelPicker"]
     assert lineup["replaceBuiltInOptions"] is False
-    assert [r["model"] for r in lineup["options"]] == ["ollama/qwen3:14b"], "bare aliases are already built in"
+    assert [r["model"] for r in lineup["options"]] == ["ollama/qwen3:14b", "gemini-x"], "aliases are built in"
     assert lineup["options"][0]["label"].endswith("(ollama)")
     # the user's own --settings wins, and the switch turns it off
     assert "--settings" not in cli.build_command(config, None, ["--settings", "x.json"], MODELS)[:-2]

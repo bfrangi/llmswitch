@@ -117,16 +117,17 @@ def launch_env(config: Config, chosen: str | None, models: list[dict[str, Any]])
 
 
 def picker_rows(models: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Rows for Claude Code's /model picker: every provider-prefixed model the gateway routes.
+    """Rows for Claude Code's /model picker: every model the gateway routes, by its launch name.
 
-    Bare names (Claude aliases, claude-* ids) are already in Claude Code's own lineup.
+    Entries the config marks ``bare`` (aliases such as ``opus``, which Claude Code expands
+    itself) are already in Claude Code's own lineup. A bare launch name is not enough to
+    tell: a ``match`` glob makes a provider's models bare too.
     """
     rows = []
     for m in models:
-        launch_id = m["launch_id"]
-        if "/" not in launch_id:
+        if m.get("bare"):
             continue
-        row = {"model": launch_id, "label": f"{m.get('display_name') or m['upstream_id']}  ({m['provider']})"}
+        row = {"model": m["launch_id"], "label": f"{m.get('display_name') or m['upstream_id']}  ({m['provider']})"}
         if m.get("description"):
             row["description"] = m["description"]
         rows.append(row)
